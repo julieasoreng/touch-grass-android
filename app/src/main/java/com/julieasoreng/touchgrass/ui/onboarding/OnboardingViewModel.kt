@@ -76,10 +76,31 @@ class OnboardingViewModel(
         _uiState.update { it.copy(step = OnboardingStep.TARGET) }
     }
 
-    fun selectTarget(option: String) = advanceSingleSelect(
-        applyAnswer = { it.copy(targetUsage = option) },
-        nextStep = OnboardingStep.SCROLL_TIMES
-    )
+    fun selectTargetPreset(preset: TargetPreset) {
+        val baseline = _uiState.value.answers.dailyAverageScreenTimeMillis
+        advanceSingleSelect(
+            applyAnswer = { it.copy(targetScreenTimeMillis = preset.targetMillis(baseline), targetPreset = preset) },
+            nextStep = OnboardingStep.SCROLL_TIMES
+        )
+    }
+
+    fun startCustomTargetEntry() {
+        _uiState.update { it.copy(isEnteringCustomTarget = true) }
+    }
+
+    fun updateCustomTargetInput(text: String) {
+        _uiState.update { it.copy(customTargetInputText = text) }
+    }
+
+    fun confirmCustomTarget() {
+        val minutes = _uiState.value.customTargetInputText.toIntOrNull() ?: return
+        if (minutes <= 0) return
+        _uiState.update { it.copy(isEnteringCustomTarget = false, customTargetInputText = "") }
+        advanceSingleSelect(
+            applyAnswer = { it.copy(targetScreenTimeMillis = minutes * 60_000L, targetPreset = null) },
+            nextStep = OnboardingStep.SCROLL_TIMES
+        )
+    }
 
     private fun advanceSingleSelect(
         applyAnswer: (OnboardingAnswers) -> OnboardingAnswers,

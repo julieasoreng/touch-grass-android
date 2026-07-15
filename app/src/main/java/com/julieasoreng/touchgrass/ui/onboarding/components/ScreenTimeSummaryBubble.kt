@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.julieasoreng.touchgrass.ui.onboarding.formatDuration
 import com.julieasoreng.touchgrass.ui.theme.CharcoalText
 import com.julieasoreng.touchgrass.ui.theme.Lavender
 import com.julieasoreng.touchgrass.ui.theme.White
@@ -75,16 +76,5 @@ fun ScreenTimeSummaryBubble(
                 }
             }
         }
-    }
-}
-
-private fun formatDuration(millis: Long): String {
-    val totalMinutes = millis / 60_000L
-    val hours = totalMinutes / 60
-    val minutes = totalMinutes % 60
-    return when {
-        hours > 0 && minutes > 0 -> "${hours}h ${minutes}m"
-        hours > 0 -> "${hours}h"
-        else -> "${minutes}m"
     }
 }

@@ -6,6 +6,8 @@ data class OnboardingUiState(
     val isLoadingBaseline: Boolean = false,
     val hasLoadedBaseline: Boolean = false,
     val answers: OnboardingAnswers = OnboardingAnswers(),
+    val isEnteringCustomTarget: Boolean = false,
+    val customTargetInputText: String = "",
     val selectedScrollTimes: Set<String> = emptySet(),
     val selectedReplacementActivities: List<String> = emptyList(),
     val customActivityText: String = "",
