@@ -1,5 +1,7 @@
 package com.julieasoreng.touchgrass.ui.onboarding
 
+import com.julieasoreng.touchgrass.data.usage.ScrollTimePattern
+
 enum class OnboardingStep {
     USAGE_PERMISSION,
     USAGE,
@@ -21,6 +23,7 @@ data class OnboardingAnswers(
     val screenTimeDaysOfData: Int = 0,
     val targetScreenTimeMillis: Long? = null,
     val targetPreset: TargetPreset? = null,
-    val scrollTimes: List<String> = emptyList(),
+    val scrollTimePattern: ScrollTimePattern? = null,
+    val scrollTimePatternDaysOfData: Int = 0,
     val replacementActivities: List<String> = emptyList()
 )

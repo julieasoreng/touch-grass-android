@@ -42,14 +42,13 @@ import com.julieasoreng.touchgrass.ui.onboarding.components.OnboardingBottomCta
 import com.julieasoreng.touchgrass.ui.onboarding.components.OptionButton
 import com.julieasoreng.touchgrass.ui.onboarding.components.ProgressPills
 import com.julieasoreng.touchgrass.ui.onboarding.components.ScreenTimeSummaryBubble
+import com.julieasoreng.touchgrass.ui.onboarding.components.ScrollTimeInsightBubble
 import com.julieasoreng.touchgrass.ui.onboarding.components.SelectableChip
 import com.julieasoreng.touchgrass.ui.onboarding.components.UserChatBubble
 import com.julieasoreng.touchgrass.ui.theme.CharcoalText
 import com.julieasoreng.touchgrass.ui.theme.CreamBackground
-import com.julieasoreng.touchgrass.ui.theme.Lavender
 import com.julieasoreng.touchgrass.ui.theme.SageGreen
 
-private val scrollTimeOptions = listOf("Morning", "Midday", "After work", "Before bed")
 private val replacementOptions = listOf("Reading", "Writing", "Painting", "Dancing", "Exercise", "Journaling")
 
 private sealed interface TranscriptItem {
@@ -57,7 +56,7 @@ private sealed interface TranscriptItem {
     data class UserAnswer(val text: String) : TranscriptItem
     data object ScreenTimeBaseline : TranscriptItem
     data object TargetOptions : TranscriptItem
-    data object ScrollTimeChips : TranscriptItem
+    data object ScrollPatternCard : TranscriptItem
     data object ReplacementChips : TranscriptItem
 }
 
@@ -92,11 +91,8 @@ private fun buildTranscript(state: OnboardingUiState): List<TranscriptItem> {
     }
 
     if (state.step.ordinal >= OnboardingStep.SCROLL_TIMES.ordinal) {
-        items += TranscriptItem.Assistant("When do you usually find yourself scrolling the most? Pick as many as you like.")
-        if (state.step == OnboardingStep.SCROLL_TIMES) items += TranscriptItem.ScrollTimeChips
-        if (state.answers.scrollTimes.isNotEmpty()) {
-            items += TranscriptItem.UserAnswer(state.answers.scrollTimes.joinToString(", "))
-        }
+        items += TranscriptItem.Assistant("Let's see when you tend to scroll the most.")
+        items += TranscriptItem.ScrollPatternCard
     }
 
     if (state.step.ordinal >= OnboardingStep.REPLACEMENT.ordinal) {
@@ -167,14 +163,14 @@ fun OnboardingScreen(
                 )
                 OnboardingStep.USAGE -> OnboardingBottomCta(
                     text = "Continue",
-                    enabled = !state.isLoadingBaseline,
+                    enabled = !state.isLoadingScreenTimeData,
                     onClick = viewModel::confirmUsageBaseline,
                     modifier = Modifier.padding(20.dp)
                 )
                 OnboardingStep.SCROLL_TIMES -> OnboardingBottomCta(
                     text = "Continue",
-                    enabled = state.selectedScrollTimes.isNotEmpty(),
-                    onClick = viewModel::confirmScrollTimes,
+                    enabled = !state.isLoadingScreenTimeData,
+                    onClick = viewModel::confirmScrollTimeInsight,
                     modifier = Modifier.padding(20.dp)
                 )
                 OnboardingStep.REPLACEMENT -> OnboardingBottomCta(
@@ -228,7 +224,7 @@ private fun TranscriptItemContent(
         is TranscriptItem.UserAnswer -> UserChatBubble(item.text)
 
         TranscriptItem.ScreenTimeBaseline -> ScreenTimeSummaryBubble(
-            isLoading = state.isLoadingBaseline,
+            isLoading = state.isLoadingScreenTimeData,
             dailyAverageMillis = state.answers.dailyAverageScreenTimeMillis,
             daysOfData = state.answers.screenTimeDaysOfData
         )
@@ -272,20 +268,11 @@ private fun TranscriptItemContent(
             }
         }
 
-        TranscriptItem.ScrollTimeChips -> FlowRow(
-            modifier = Modifier.padding(start = 40.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            scrollTimeOptions.forEach { option ->
-                SelectableChip(
-                    text = option,
-                    selected = option in state.selectedScrollTimes,
-                    selectedColor = Lavender,
-                    onClick = { viewModel.toggleScrollTime(option) }
-                )
-            }
-        }
+        TranscriptItem.ScrollPatternCard -> ScrollTimeInsightBubble(
+            isLoading = state.isLoadingScreenTimeData,
+            dominantPattern = state.answers.scrollTimePattern,
+            daysOfData = state.answers.scrollTimePatternDaysOfData
+        )
 
         TranscriptItem.ReplacementChips -> Column(
             modifier = Modifier.padding(start = 40.dp),

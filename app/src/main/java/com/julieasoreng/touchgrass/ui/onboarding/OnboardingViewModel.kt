@@ -49,30 +49,34 @@ class OnboardingViewModel(
         if (_uiState.value.step == OnboardingStep.USAGE_PERMISSION) {
             _uiState.update { it.copy(step = OnboardingStep.USAGE) }
         }
-        if (!_uiState.value.hasLoadedBaseline) {
-            loadScreenTimeBaseline()
+        if (!_uiState.value.hasLoadedScreenTimeData) {
+            loadScreenTimeData()
         }
     }
 
-    private fun loadScreenTimeBaseline() {
-        _uiState.update { it.copy(isLoadingBaseline = true) }
+    private fun loadScreenTimeData() {
+        _uiState.update { it.copy(isLoadingScreenTimeData = true) }
         viewModelScope.launch {
-            val baseline = withContext(Dispatchers.IO) { screenTimeRepository.getSocialMediaBaseline() }
+            val (baseline, scrollInsight) = withContext(Dispatchers.IO) {
+                screenTimeRepository.getSocialMediaBaseline() to screenTimeRepository.getScrollTimeInsight()
+            }
             _uiState.update {
                 it.copy(
                     answers = it.answers.copy(
                         dailyAverageScreenTimeMillis = baseline.dailyAverageMillis,
-                        screenTimeDaysOfData = baseline.daysOfData
+                        screenTimeDaysOfData = baseline.daysOfData,
+                        scrollTimePattern = scrollInsight.dominantPattern,
+                        scrollTimePatternDaysOfData = scrollInsight.daysOfData
                     ),
-                    isLoadingBaseline = false,
-                    hasLoadedBaseline = true
+                    isLoadingScreenTimeData = false,
+                    hasLoadedScreenTimeData = true
                 )
             }
         }
     }
 
     fun confirmUsageBaseline() {
-        if (_uiState.value.isLoadingBaseline) return
+        if (_uiState.value.isLoadingScreenTimeData) return
         _uiState.update { it.copy(step = OnboardingStep.TARGET) }
     }
 
@@ -114,26 +118,9 @@ class OnboardingViewModel(
         }
     }
 
-    fun toggleScrollTime(option: String) {
-        _uiState.update { state ->
-            val updated = if (option in state.selectedScrollTimes) {
-                state.selectedScrollTimes - option
-            } else {
-                state.selectedScrollTimes + option
-            }
-            state.copy(selectedScrollTimes = updated)
-        }
-    }
-
-    fun confirmScrollTimes() {
-        val state = _uiState.value
-        if (state.selectedScrollTimes.isEmpty()) return
-        _uiState.update {
-            it.copy(
-                answers = it.answers.copy(scrollTimes = it.selectedScrollTimes.toList()),
-                step = OnboardingStep.REPLACEMENT
-            )
-        }
+    fun confirmScrollTimeInsight() {
+        if (_uiState.value.isLoadingScreenTimeData) return
+        _uiState.update { it.copy(step = OnboardingStep.REPLACEMENT) }
     }
 
     fun toggleReplacementActivity(option: String) {
