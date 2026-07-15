@@ -54,6 +54,7 @@ fun MyGoalsScreen(
     viewModel: GoalsViewModel,
     onGoalSelected: (String) -> Unit,
     onViewSummary: () -> Unit,
+    onOpenLockSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -89,15 +90,22 @@ fun MyGoalsScreen(
                 fontSize = 24.sp,
                 color = GoalsTextPrimary
             )
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(GoalsPurple)
-                    .clickable { showAddGoalDialog = true },
-                contentAlignment = Alignment.Center
-            ) {
-                Text("+", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "🔒",
+                    fontSize = 20.sp,
+                    modifier = Modifier.clickable(onClick = onOpenLockSettings)
+                )
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(GoalsPurple)
+                        .clickable { showAddGoalDialog = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("+", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
 
@@ -191,7 +199,8 @@ private fun MyGoalsScreenPreview() {
         MyGoalsScreen(
             viewModel = remember { GoalsViewModel() },
             onGoalSelected = {},
-            onViewSummary = {}
+            onViewSummary = {},
+            onOpenLockSettings = {}
         )
     }
 }

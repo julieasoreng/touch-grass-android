@@ -27,3 +27,7 @@ val GoalsDarkTrack = Color(0xFF2A3A34)
 val GoalsDarkBorder = Color(0xFF48594F)
 val GoalsDarkMintText = Color(0xFFB7E4D3)
 val GoalsDeleteBackground = Color(0xFFE08A7D)
+
+// Post-unlock "mirror" screen — deliberately stark and separate from the mint-toned focus timer.
+val LockScreenBlack = Color(0xFF000000)
+val LockScreenTextMuted = Color(0xFFA09DAA)

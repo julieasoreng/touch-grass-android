@@ -1,0 +1,266 @@
+package com.julieasoreng.touchgrass.ui.lock
+
+import android.Manifest
+import android.app.admin.DevicePolicyManager
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.julieasoreng.touchgrass.admin.TouchGrassDeviceAdminReceiver
+import com.julieasoreng.touchgrass.usage.UsageStatsHelper
+import com.julieasoreng.touchgrass.ui.theme.GoalsBackground
+import com.julieasoreng.touchgrass.ui.theme.GoalsMintDark
+import com.julieasoreng.touchgrass.ui.theme.GoalsPurple
+import com.julieasoreng.touchgrass.ui.theme.GoalsTextMuted
+import com.julieasoreng.touchgrass.ui.theme.GoalsTextPrimary
+import com.julieasoreng.touchgrass.ui.theme.Inter
+import com.julieasoreng.touchgrass.ui.theme.Quicksand
+
+private val dailyLimitOptions = listOf(30, 60, 90, 120)
+
+@Composable
+fun DeviceAdminPermissionScreen(
+    viewModel: LockFeatureViewModel,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val state by viewModel.state.collectAsState()
+
+    var hasUsageAccess by remember { mutableStateOf(UsageStatsHelper.hasUsageAccess(context)) }
+    var hasNotificationPermission by remember { mutableStateOf(isNotificationPermissionGranted(context)) }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshAdminState(context)
+                hasUsageAccess = UsageStatsHelper.hasUsageAccess(context)
+                hasNotificationPermission = isNotificationPermissionGranted(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val deviceAdminLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {
+        viewModel.refreshAdminState(context)
+    }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasNotificationPermission = granted
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(GoalsBackground)
+            .verticalScroll(rememberScrollState())
+            .padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                text = "‹",
+                fontSize = 22.sp,
+                color = GoalsTextMuted,
+                modifier = Modifier.clickable(onClick = onBack)
+            )
+            Text(
+                text = "Screen lock",
+                fontFamily = Quicksand,
+                fontWeight = FontWeight.Bold,
+                fontSize = 22.sp,
+                color = GoalsTextPrimary
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp))
+                .background(Color.White)
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text("🔒", fontSize = 28.sp)
+            Text(
+                text = "Lock your phone when you hit your limit",
+                fontFamily = Quicksand,
+                fontWeight = FontWeight.Bold,
+                fontSize = 17.sp,
+                color = GoalsTextPrimary
+            )
+            Text(
+                text = "Touch Grass can lock your screen when you hit your limit, so willpower " +
+                    "isn't the only thing standing between you and your goals. You can revoke this " +
+                    "anytime in Settings.",
+                fontFamily = Inter,
+                fontSize = 13.5.sp,
+                color = GoalsTextMuted
+            )
+        }
+
+        PermissionRow(
+            label = "Screen lock",
+            granted = state.isDeviceAdminActive,
+            actionLabel = if (state.isDeviceAdminActive) "Manage" else "Activate",
+            onClick = {
+                if (state.isDeviceAdminActive) {
+                    context.startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS))
+                } else {
+                    val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                        putExtra(
+                            DevicePolicyManager.EXTRA_DEVICE_ADMIN,
+                            TouchGrassDeviceAdminReceiver.componentName(context)
+                        )
+                        putExtra(
+                            DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                            "Touch Grass locks your screen when you hit your daily screen time limit."
+                        )
+                    }
+                    deviceAdminLauncher.launch(intent)
+                }
+            }
+        )
+
+        PermissionRow(
+            label = "Usage access",
+            granted = hasUsageAccess,
+            actionLabel = "Grant access",
+            onClick = {
+                context.startActivity(
+                    Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS, Uri.parse("package:${context.packageName}"))
+                )
+            }
+        )
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            PermissionRow(
+                label = "Notifications",
+                granted = hasNotificationPermission,
+                actionLabel = "Allow",
+                onClick = { notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) }
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp))
+                .background(Color.White)
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Text(
+                text = "Daily limit",
+                fontFamily = Quicksand,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                color = GoalsTextPrimary
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                dailyLimitOptions.forEach { option ->
+                    val selected = state.dailyLimitMinutes == option
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(100.dp))
+                            .background(if (selected) GoalsPurple else Color.White)
+                            .clickable { viewModel.setDailyLimitMinutes(option) }
+                            .padding(vertical = 9.dp, horizontal = 16.dp)
+                    ) {
+                        Text(
+                            text = if (option < 60) "${option}m" else "${option / 60}h${(option % 60).takeIf { it > 0 }?.let { "${it}m" } ?: ""}",
+                            fontFamily = Quicksand,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                            fontSize = 13.5.sp,
+                            color = if (selected) Color.White else GoalsTextPrimary.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PermissionRow(
+    label: String,
+    granted: Boolean,
+    actionLabel: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color.White)
+            .padding(vertical = 14.dp, horizontal = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column {
+            Text(label, fontFamily = Quicksand, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = GoalsTextPrimary)
+            Text(
+                text = if (granted) "Granted" else "Not granted",
+                fontFamily = Inter,
+                fontSize = 12.sp,
+                color = if (granted) GoalsMintDark else GoalsTextMuted
+            )
+        }
+        if (!granted || label == "Screen lock") {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(100.dp))
+                    .background(GoalsPurple)
+                    .clickable(onClick = onClick)
+                    .padding(vertical = 8.dp, horizontal = 14.dp)
+            ) {
+                Text(actionLabel, fontFamily = Quicksand, fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = Color.White)
+            }
+        }
+    }
+}
+
+private fun isNotificationPermissionGranted(context: android.content.Context): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
+    return ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+        android.content.pm.PackageManager.PERMISSION_GRANTED
+}
