@@ -1,6 +1,7 @@
 package com.julieasoreng.touchgrass.ui.onboarding
 
 enum class OnboardingStep {
+    USAGE_PERMISSION,
     USAGE,
     TARGET,
     SCROLL_TIMES,
@@ -8,7 +9,8 @@ enum class OnboardingStep {
 }
 
 data class OnboardingAnswers(
-    val currentUsage: String = "",
+    val dailyAverageScreenTimeMillis: Long = 0L,
+    val screenTimeDaysOfData: Int = 0,
     val targetUsage: String = "",
     val scrollTimes: List<String> = emptyList(),
     val replacementActivities: List<String> = emptyList()

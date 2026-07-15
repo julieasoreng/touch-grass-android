@@ -1,5 +1,7 @@
 package com.julieasoreng.touchgrass.ui.onboarding
 
+import android.content.Intent
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
@@ -19,26 +21,30 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.julieasoreng.touchgrass.ui.onboarding.components.AssistantChatBubble
 import com.julieasoreng.touchgrass.ui.onboarding.components.CustomActivityInput
 import com.julieasoreng.touchgrass.ui.onboarding.components.OnboardingBottomCta
 import com.julieasoreng.touchgrass.ui.onboarding.components.OptionButton
 import com.julieasoreng.touchgrass.ui.onboarding.components.ProgressPills
+import com.julieasoreng.touchgrass.ui.onboarding.components.ScreenTimeSummaryBubble
 import com.julieasoreng.touchgrass.ui.onboarding.components.SelectableChip
 import com.julieasoreng.touchgrass.ui.onboarding.components.UserChatBubble
 import com.julieasoreng.touchgrass.ui.theme.CreamBackground
 import com.julieasoreng.touchgrass.ui.theme.Lavender
 import com.julieasoreng.touchgrass.ui.theme.SageGreen
 
-private val usageOptions = listOf("Under 1 hour", "1–2 hours", "2–3 hours", "3–4 hours", "4+ hours")
 private val targetOptions = listOf("30 minutes", "45 minutes", "1 hour", "1.5 hours")
 private val scrollTimeOptions = listOf("Morning", "Midday", "After work", "Before bed")
 private val replacementOptions = listOf("Reading", "Writing", "Painting", "Dancing", "Exercise", "Journaling")
@@ -46,7 +52,7 @@ private val replacementOptions = listOf("Reading", "Writing", "Painting", "Danci
 private sealed interface TranscriptItem {
     data class Assistant(val text: String) : TranscriptItem
     data class UserAnswer(val text: String) : TranscriptItem
-    data object UsageOptions : TranscriptItem
+    data object ScreenTimeBaseline : TranscriptItem
     data object TargetOptions : TranscriptItem
     data object ScrollTimeChips : TranscriptItem
     data object ReplacementChips : TranscriptItem
@@ -55,14 +61,20 @@ private sealed interface TranscriptItem {
 private fun buildTranscript(state: OnboardingUiState): List<TranscriptItem> {
     val items = mutableListOf<TranscriptItem>()
 
+    if (!state.hasUsagePermission) {
+        items += TranscriptItem.Assistant(
+            "Hi, I'm Bloom 🌱 To show you your actual screen time, we need access to your phone's usage data."
+        )
+        return items
+    }
+
     items += TranscriptItem.Assistant(
-        "Hi, I'm Bloom 🌿 Let's shrink your screen time together. How much do you scroll, roughly, on an average day?"
+        "Hi, I'm Bloom 🌱 Here's your actual screen time, based on your phone's usage data."
     )
-    if (state.step == OnboardingStep.USAGE) items += TranscriptItem.UsageOptions
-    if (state.answers.currentUsage.isNotEmpty()) items += TranscriptItem.UserAnswer(state.answers.currentUsage)
+    items += TranscriptItem.ScreenTimeBaseline
 
     if (state.step.ordinal >= OnboardingStep.TARGET.ordinal) {
-        items += TranscriptItem.Assistant("Nice, thanks for being honest. What would you like to bring that down to, ideally?")
+        items += TranscriptItem.Assistant("Thanks for taking a look. What would you like to bring that down to, ideally?")
         if (state.step == OnboardingStep.TARGET) items += TranscriptItem.TargetOptions
         if (state.answers.targetUsage.isNotEmpty()) items += TranscriptItem.UserAnswer(state.answers.targetUsage)
     }
@@ -98,7 +110,18 @@ fun OnboardingScreen(
         viewModel.navigateToHome.collect { onOnboardingComplete() }
     }
 
-    BackHandler(enabled = state.step != OnboardingStep.USAGE) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshUsagePermission()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    BackHandler(enabled = state.step.ordinal > OnboardingStep.USAGE.ordinal) {
         viewModel.goBack()
     }
 
@@ -124,6 +147,18 @@ fun OnboardingScreen(
         },
         bottomBar = {
             when (state.step) {
+                OnboardingStep.USAGE_PERMISSION -> OnboardingBottomCta(
+                    text = "Open Settings",
+                    enabled = true,
+                    onClick = { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) },
+                    modifier = Modifier.padding(20.dp)
+                )
+                OnboardingStep.USAGE -> OnboardingBottomCta(
+                    text = "Continue",
+                    enabled = !state.isLoadingBaseline,
+                    onClick = viewModel::confirmUsageBaseline,
+                    modifier = Modifier.padding(20.dp)
+                )
                 OnboardingStep.SCROLL_TIMES -> OnboardingBottomCta(
                     text = "Continue",
                     enabled = state.selectedScrollTimes.isNotEmpty(),
@@ -180,18 +215,11 @@ private fun TranscriptItemContent(
         is TranscriptItem.Assistant -> AssistantChatBubble(item.text)
         is TranscriptItem.UserAnswer -> UserChatBubble(item.text)
 
-        TranscriptItem.UsageOptions -> Column(
-            modifier = Modifier.padding(start = 40.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            usageOptions.forEach { option ->
-                OptionButton(
-                    text = option,
-                    selected = state.answers.currentUsage == option,
-                    onClick = { viewModel.selectUsage(option) }
-                )
-            }
-        }
+        TranscriptItem.ScreenTimeBaseline -> ScreenTimeSummaryBubble(
+            isLoading = state.isLoadingBaseline,
+            dailyAverageMillis = state.answers.dailyAverageScreenTimeMillis,
+            daysOfData = state.answers.screenTimeDaysOfData
+        )
 
         TranscriptItem.TargetOptions -> Column(
             modifier = Modifier.padding(start = 40.dp),
