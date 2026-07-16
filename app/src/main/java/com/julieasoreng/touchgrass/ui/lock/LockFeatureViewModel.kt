@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.julieasoreng.touchgrass.admin.TouchGrassDeviceAdminReceiver
 import com.julieasoreng.touchgrass.data.preferences.LockFeaturePreferencesRepository
 import com.julieasoreng.touchgrass.data.preferences.LockFeatureState
+import com.julieasoreng.touchgrass.service.MonitoringWatchdogWorker
 import com.julieasoreng.touchgrass.service.ScreenTimeMonitorService
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -39,8 +40,10 @@ class LockFeatureViewModel(
         viewModelScope.launch { repository.setDeviceAdminActive(isActive) }
         if (isActive) {
             ScreenTimeMonitorService.start(context)
+            MonitoringWatchdogWorker.schedule(context)
         } else {
             ScreenTimeMonitorService.stop(context)
+            MonitoringWatchdogWorker.cancel(context)
         }
     }
 }

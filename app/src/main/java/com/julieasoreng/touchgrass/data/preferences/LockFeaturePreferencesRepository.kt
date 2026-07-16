@@ -17,7 +17,8 @@ data class LockFeatureState(
     val dailyLimitMinutes: Int = 60,
     val pendingUnlockNotification: Boolean = false,
     val lastLockTimestamp: Long = 0L,
-    val lastLockReasonText: String = ""
+    val lastLockReasonText: String = "",
+    val lastHeartbeatTimestamp: Long = 0L
 )
 
 class LockFeaturePreferencesRepository(private val context: Context) {
@@ -28,6 +29,7 @@ class LockFeaturePreferencesRepository(private val context: Context) {
         val PENDING_UNLOCK_NOTIFICATION = booleanPreferencesKey("pending_unlock_notification")
         val LAST_LOCK_TIMESTAMP = longPreferencesKey("last_lock_timestamp")
         val LAST_LOCK_REASON_TEXT = stringPreferencesKey("last_lock_reason_text")
+        val LAST_HEARTBEAT_TIMESTAMP = longPreferencesKey("last_heartbeat_timestamp")
     }
 
     val state: Flow<LockFeatureState> = context.lockFeatureDataStore.data.map { prefs ->
@@ -36,7 +38,8 @@ class LockFeaturePreferencesRepository(private val context: Context) {
             dailyLimitMinutes = prefs[Keys.DAILY_LIMIT_MINUTES] ?: 60,
             pendingUnlockNotification = prefs[Keys.PENDING_UNLOCK_NOTIFICATION] ?: false,
             lastLockTimestamp = prefs[Keys.LAST_LOCK_TIMESTAMP] ?: 0L,
-            lastLockReasonText = prefs[Keys.LAST_LOCK_REASON_TEXT] ?: ""
+            lastLockReasonText = prefs[Keys.LAST_LOCK_REASON_TEXT] ?: "",
+            lastHeartbeatTimestamp = prefs[Keys.LAST_HEARTBEAT_TIMESTAMP] ?: 0L
         )
     }
 
@@ -58,5 +61,12 @@ class LockFeaturePreferencesRepository(private val context: Context) {
 
     suspend fun clearPendingUnlockNotification() {
         context.lockFeatureDataStore.edit { it[Keys.PENDING_UNLOCK_NOTIFICATION] = false }
+    }
+
+    /** Written every poll cycle while [ScreenTimeMonitorService][com.julieasoreng.touchgrass.service.ScreenTimeMonitorService]
+     *  is actually alive, so [com.julieasoreng.touchgrass.service.MonitoringWatchdogWorker] can tell a
+     *  stale/missing heartbeat apart from a healthy one. */
+    suspend fun recordHeartbeat() {
+        context.lockFeatureDataStore.edit { it[Keys.LAST_HEARTBEAT_TIMESTAMP] = System.currentTimeMillis() }
     }
 }

@@ -59,6 +59,9 @@ class ScreenTimeMonitorService : Service() {
         serviceScope = scope
         scope.launch {
             while (isActive) {
+                // Lets MonitoringWatchdogWorker tell "this service is alive" apart from "the OS
+                // killed it in the background" — see recordHeartbeat's doc for why.
+                repository.recordHeartbeat()
                 checkUsageAgainstLimit()
                 delay(MONITOR_INTERVAL_MS)
             }
