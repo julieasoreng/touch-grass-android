@@ -18,7 +18,8 @@ data class LockFeatureState(
     val pendingUnlockNotification: Boolean = false,
     val lastLockTimestamp: Long = 0L,
     val lastLockReasonText: String = "",
-    val lastHeartbeatTimestamp: Long = 0L
+    val lastHeartbeatTimestamp: Long = 0L,
+    val hasDismissedLockNudge: Boolean = false
 )
 
 class LockFeaturePreferencesRepository(private val context: Context) {
@@ -30,6 +31,7 @@ class LockFeaturePreferencesRepository(private val context: Context) {
         val LAST_LOCK_TIMESTAMP = longPreferencesKey("last_lock_timestamp")
         val LAST_LOCK_REASON_TEXT = stringPreferencesKey("last_lock_reason_text")
         val LAST_HEARTBEAT_TIMESTAMP = longPreferencesKey("last_heartbeat_timestamp")
+        val HAS_DISMISSED_LOCK_NUDGE = booleanPreferencesKey("has_dismissed_lock_nudge")
     }
 
     val state: Flow<LockFeatureState> = context.lockFeatureDataStore.data.map { prefs ->
@@ -39,7 +41,8 @@ class LockFeaturePreferencesRepository(private val context: Context) {
             pendingUnlockNotification = prefs[Keys.PENDING_UNLOCK_NOTIFICATION] ?: false,
             lastLockTimestamp = prefs[Keys.LAST_LOCK_TIMESTAMP] ?: 0L,
             lastLockReasonText = prefs[Keys.LAST_LOCK_REASON_TEXT] ?: "",
-            lastHeartbeatTimestamp = prefs[Keys.LAST_HEARTBEAT_TIMESTAMP] ?: 0L
+            lastHeartbeatTimestamp = prefs[Keys.LAST_HEARTBEAT_TIMESTAMP] ?: 0L,
+            hasDismissedLockNudge = prefs[Keys.HAS_DISMISSED_LOCK_NUDGE] ?: false
         )
     }
 
@@ -68,5 +71,11 @@ class LockFeaturePreferencesRepository(private val context: Context) {
      *  stale/missing heartbeat apart from a healthy one. */
     suspend fun recordHeartbeat() {
         context.lockFeatureDataStore.edit { it[Keys.LAST_HEARTBEAT_TIMESTAMP] = System.currentTimeMillis() }
+    }
+
+    /** The user tapped "Not now" on the My Goals nudge — stop showing it until they turn Screen
+     *  Lock on some other way (at which point isDeviceAdminActive alone hides it). */
+    suspend fun dismissLockNudge() {
+        context.lockFeatureDataStore.edit { it[Keys.HAS_DISMISSED_LOCK_NUDGE] = true }
     }
 }

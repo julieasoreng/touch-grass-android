@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -112,11 +113,15 @@ fun BloomNavHost(
                 )
             }
             composable(NavRoutes.HOME) {
+                val lockFeatureState by lockFeatureViewModel.state.collectAsState()
                 MyGoalsScreen(
                     viewModel = goalsViewModel,
                     onGoalSelected = { goalId -> navController.navigate(NavRoutes.setDuration(goalId)) },
                     onViewSummary = { navController.navigate(NavRoutes.WEEKLY_SUMMARY) },
-                    onOpenLockSettings = { navController.navigate(NavRoutes.LOCK_PERMISSION) }
+                    onOpenLockSettings = { navController.navigate(NavRoutes.LOCK_PERMISSION) },
+                    showLockNudge = !lockFeatureState.isDeviceAdminActive && !lockFeatureState.hasDismissedLockNudge,
+                    onEnableLockNudge = { navController.navigate(NavRoutes.LOCK_PERMISSION) },
+                    onDismissLockNudge = { lockFeatureViewModel.dismissLockNudge() }
                 )
             }
             composable(

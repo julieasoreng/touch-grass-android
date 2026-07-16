@@ -42,6 +42,7 @@ import com.julieasoreng.touchgrass.ui.goals.components.GoalCard
 import com.julieasoreng.touchgrass.ui.goals.components.dashedBorder
 import com.julieasoreng.touchgrass.ui.theme.BloomTheme
 import com.julieasoreng.touchgrass.ui.theme.GoalsBackground
+import com.julieasoreng.touchgrass.ui.theme.GoalsLavender
 import com.julieasoreng.touchgrass.ui.theme.GoalsMint
 import com.julieasoreng.touchgrass.ui.theme.GoalsMintBannerText
 import com.julieasoreng.touchgrass.ui.theme.GoalsPurple
@@ -56,6 +57,9 @@ fun MyGoalsScreen(
     onGoalSelected: (String) -> Unit,
     onViewSummary: () -> Unit,
     onOpenLockSettings: () -> Unit,
+    showLockNudge: Boolean = false,
+    onEnableLockNudge: () -> Unit = {},
+    onDismissLockNudge: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -108,6 +112,10 @@ fun MyGoalsScreen(
                     Text("+", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 }
             }
+        }
+
+        if (showLockNudge) {
+            LockNudgeBanner(onEnable = onEnableLockNudge, onDismiss = onDismissLockNudge)
         }
 
         Text(
@@ -206,6 +214,46 @@ fun MyGoalsScreen(
     }
 }
 
+@Composable
+private fun LockNudgeBanner(onEnable: () -> Unit, onDismiss: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(GoalsLavender)
+            .padding(vertical = 14.dp, horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text("🔒", fontSize = 20.sp)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Turn on Screen Lock so Touch Grass can actually step in when you hit your goal.",
+                fontFamily = Inter,
+                fontSize = 13.sp,
+                color = GoalsTextPrimary,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                Text(
+                    text = "Turn on",
+                    fontFamily = Quicksand,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    color = GoalsPurple,
+                    modifier = Modifier.clickable(onClick = onEnable)
+                )
+                Text(
+                    text = "Not now",
+                    fontFamily = Inter,
+                    fontSize = 13.sp,
+                    color = GoalsTextMuted,
+                    modifier = Modifier.clickable(onClick = onDismiss)
+                )
+            }
+        }
+    }
+}
+
 @Preview(showBackground = true)
 @Composable
 private fun MyGoalsScreenPreview() {
@@ -215,7 +263,8 @@ private fun MyGoalsScreenPreview() {
             viewModel = remember { GoalsViewModelFactory(context.applicationContext).create(GoalsViewModel::class.java) },
             onGoalSelected = {},
             onViewSummary = {},
-            onOpenLockSettings = {}
+            onOpenLockSettings = {},
+            showLockNudge = true
         )
     }
 }

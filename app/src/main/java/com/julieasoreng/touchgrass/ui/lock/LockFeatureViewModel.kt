@@ -29,6 +29,10 @@ class LockFeatureViewModel(
         viewModelScope.launch { repository.setDailyLimitMinutes(minutes) }
     }
 
+    fun dismissLockNudge() {
+        viewModelScope.launch { repository.dismissLockNudge() }
+    }
+
     /**
      * DevicePolicyManager is the real source of truth for admin-active status — the user can
      * revoke it anytime from system Settings without the app running, so this reconciles our
