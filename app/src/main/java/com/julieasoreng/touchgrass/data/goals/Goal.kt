@@ -5,7 +5,7 @@ import androidx.compose.ui.graphics.Color
 data class Goal(
     val id: String,
     val name: String,
-    val emoji: String,
+    val icon: ActivityIcon,
     val color: Color,
     val weeklyMinutes: Int
 )

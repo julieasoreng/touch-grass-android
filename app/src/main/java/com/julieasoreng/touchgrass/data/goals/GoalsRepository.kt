@@ -20,7 +20,7 @@ private fun goalIdForActivity(name: String): String =
 
 data class PersistedGoal(
     val id: String,
-    val icon: String,
+    val icon: ActivityIcon,
     val colorArgb: Int,
     val name: String
 )
@@ -42,7 +42,7 @@ class GoalsRepository(private val context: Context) {
         .map { prefs -> prefs[Keys.GOALS].orEmpty().mapNotNull(::decode) }
         .distinctUntilChanged()
 
-    suspend fun addGoal(name: String, icon: String, colorArgb: Int) {
+    suspend fun addGoal(name: String, icon: ActivityIcon, colorArgb: Int) {
         val goal = PersistedGoal(id = UUID.randomUUID().toString(), icon = icon, colorArgb = colorArgb, name = name)
         context.goalsDataStore.edit { prefs ->
             prefs[Keys.GOALS] = prefs[Keys.GOALS].orEmpty() + encode(goal)
@@ -82,12 +82,13 @@ class GoalsRepository(private val context: Context) {
         }
     }
 
-    private fun encode(goal: PersistedGoal): String = "${goal.id}|${goal.icon}|${goal.colorArgb}|${goal.name}"
+    private fun encode(goal: PersistedGoal): String = "${goal.id}|${goal.icon.name}|${goal.colorArgb}|${goal.name}"
 
     private fun decode(raw: String): PersistedGoal? {
         val parts = raw.split("|", limit = 4)
         if (parts.size != 4) return null
         val colorArgb = parts[2].toIntOrNull() ?: return null
-        return PersistedGoal(id = parts[0], icon = parts[1], colorArgb = colorArgb, name = parts[3])
+        val icon = runCatching { ActivityIcon.valueOf(parts[1]) }.getOrDefault(DEFAULT_ACTIVITY_STYLE.icon)
+        return PersistedGoal(id = parts[0], icon = icon, colorArgb = colorArgb, name = parts[3])
     }
 }

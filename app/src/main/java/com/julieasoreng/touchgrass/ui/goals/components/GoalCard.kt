@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
@@ -20,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -94,7 +96,12 @@ private fun GoalCardContent(goal: Goal, onClick: () -> Unit) {
                 .background(goal.color),
             contentAlignment = Alignment.Center
         ) {
-            Text(goal.emoji, fontSize = 20.sp)
+            Icon(
+                painter = painterResource(goal.icon.drawableRes),
+                contentDescription = null,
+                tint = GoalsTextPrimary,
+                modifier = Modifier.size(22.dp)
+            )
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(goal.name, fontFamily = Quicksand, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GoalsTextPrimary)

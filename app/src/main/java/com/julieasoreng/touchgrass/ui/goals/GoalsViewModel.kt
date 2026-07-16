@@ -6,6 +6,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.julieasoreng.touchgrass.data.goals.ActivityIcon
 import com.julieasoreng.touchgrass.data.goals.CompletedSession
 import com.julieasoreng.touchgrass.data.goals.CompletedSessionsRepository
 import com.julieasoreng.touchgrass.data.goals.Goal
@@ -33,7 +34,7 @@ import kotlinx.coroutines.withContext
 private fun PersistedGoal.toGoal(): Goal = Goal(
     id = id,
     name = name,
-    emoji = icon,
+    icon = icon,
     color = Color(colorArgb),
     weeklyMinutes = 0
 )
@@ -107,7 +108,7 @@ class GoalsViewModel(
         }
     }
 
-    fun addGoal(name: String, icon: String, color: Color) {
+    fun addGoal(name: String, icon: ActivityIcon, color: Color) {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return
         viewModelScope.launch {

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -24,20 +25,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.julieasoreng.touchgrass.data.goals.ACTIVITY_COLOR_OPTIONS
 import com.julieasoreng.touchgrass.data.goals.ACTIVITY_ICON_OPTIONS
+import com.julieasoreng.touchgrass.data.goals.ActivityIcon
 import com.julieasoreng.touchgrass.ui.theme.GoalsPurple
 import com.julieasoreng.touchgrass.ui.theme.GoalsTextMuted
+import com.julieasoreng.touchgrass.ui.theme.GoalsTextPrimary
 import com.julieasoreng.touchgrass.ui.theme.Quicksand
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AddGoalDialog(
     onDismiss: () -> Unit,
-    onConfirm: (name: String, icon: String, color: Color) -> Unit
+    onConfirm: (name: String, icon: ActivityIcon, color: Color) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var selectedIcon by remember { mutableStateOf(ACTIVITY_ICON_OPTIONS.first()) }
@@ -70,7 +74,12 @@ fun AddGoalDialog(
                                 .clickable { selectedIcon = icon },
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(icon, fontSize = 20.sp)
+                            Icon(
+                                painter = painterResource(icon.drawableRes),
+                                contentDescription = null,
+                                tint = GoalsTextPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                     }
                 }

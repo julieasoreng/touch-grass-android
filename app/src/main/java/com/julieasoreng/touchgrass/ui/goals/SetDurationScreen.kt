@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -110,7 +112,12 @@ fun SetDurationScreen(
                     .background(goal.color),
                 contentAlignment = Alignment.Center
             ) {
-                Text(goal.emoji, fontSize = 30.sp)
+                Icon(
+                    painter = painterResource(goal.icon.drawableRes),
+                    contentDescription = null,
+                    tint = GoalsTextPrimary,
+                    modifier = Modifier.size(30.dp)
+                )
             }
             Spacer(Modifier.height(28.dp))
             Text(
