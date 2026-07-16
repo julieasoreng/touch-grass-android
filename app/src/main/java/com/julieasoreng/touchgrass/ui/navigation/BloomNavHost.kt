@@ -26,15 +26,26 @@ import com.julieasoreng.touchgrass.ui.goals.GoalsViewModelFactory
 import com.julieasoreng.touchgrass.ui.goals.MyGoalsScreen
 import com.julieasoreng.touchgrass.ui.goals.SetDurationScreen
 import com.julieasoreng.touchgrass.ui.goals.WeeklySummaryScreen
+import com.julieasoreng.touchgrass.ui.lock.DeviceAdminPermissionScreen
+import com.julieasoreng.touchgrass.ui.lock.LockFeatureViewModel
+import com.julieasoreng.touchgrass.ui.lock.LockFeatureViewModelFactory
+import com.julieasoreng.touchgrass.ui.lock.PostUnlockScreen
 import com.julieasoreng.touchgrass.ui.onboarding.OnboardingScreen
 import com.julieasoreng.touchgrass.ui.theme.CreamBackground
 import kotlinx.coroutines.flow.first
 
 @Composable
-fun BloomNavHost(navController: NavHostController = rememberNavController()) {
+fun BloomNavHost(
+    navController: NavHostController = rememberNavController(),
+    showPostUnlock: Boolean = false,
+    onPostUnlockConsumed: () -> Unit = {}
+) {
     val context = LocalContext.current
     val goalsViewModel: GoalsViewModel = viewModel(
         factory = remember { GoalsViewModelFactory(context.applicationContext) }
+    )
+    val lockFeatureViewModel: LockFeatureViewModel = viewModel(
+        factory = LockFeatureViewModelFactory(context.applicationContext)
     )
     val onboardingPreferencesRepository = remember { OnboardingPreferencesRepository(context.applicationContext) }
     val deviceIdentityRepository = remember { DeviceIdentityRepository(context.applicationContext) }
@@ -54,6 +65,15 @@ fun BloomNavHost(navController: NavHostController = rememberNavController()) {
         return
     }
 
+    // Placed after the loading gate above so the NavHost (and its graph) already exists by the
+    // time this actually navigates.
+    LaunchedEffect(showPostUnlock) {
+        if (showPostUnlock) {
+            navController.navigate(NavRoutes.POST_UNLOCK) { launchSingleTop = true }
+            onPostUnlockConsumed()
+        }
+    }
+
     NavHost(navController = navController, startDestination = resolvedStartDestination) {
         composable(NavRoutes.ONBOARDING) {
             OnboardingScreen(
@@ -68,7 +88,8 @@ fun BloomNavHost(navController: NavHostController = rememberNavController()) {
             MyGoalsScreen(
                 viewModel = goalsViewModel,
                 onGoalSelected = { goalId -> navController.navigate(NavRoutes.setDuration(goalId)) },
-                onViewSummary = { navController.navigate(NavRoutes.WEEKLY_SUMMARY) }
+                onViewSummary = { navController.navigate(NavRoutes.WEEKLY_SUMMARY) },
+                onOpenLockSettings = { navController.navigate(NavRoutes.LOCK_PERMISSION) }
             )
         }
         composable(
@@ -103,6 +124,27 @@ fun BloomNavHost(navController: NavHostController = rememberNavController()) {
             WeeklySummaryScreen(
                 viewModel = goalsViewModel,
                 onBack = { navController.popBackStack() }
+            )
+        }
+        composable(NavRoutes.LOCK_PERMISSION) {
+            DeviceAdminPermissionScreen(
+                viewModel = lockFeatureViewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(NavRoutes.POST_UNLOCK) {
+            PostUnlockScreen(
+                viewModel = lockFeatureViewModel,
+                onStartFocusSession = {
+                    navController.navigate(NavRoutes.HOME) {
+                        popUpTo(NavRoutes.HOME) { inclusive = true }
+                    }
+                },
+                onDismiss = {
+                    navController.navigate(NavRoutes.HOME) {
+                        popUpTo(NavRoutes.HOME) { inclusive = true }
+                    }
+                }
             )
         }
     }
