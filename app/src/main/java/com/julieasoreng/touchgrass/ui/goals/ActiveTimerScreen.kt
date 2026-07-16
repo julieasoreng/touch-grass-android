@@ -37,7 +37,6 @@ import com.julieasoreng.touchgrass.ui.theme.GoalsDarkBackground
 import com.julieasoreng.touchgrass.ui.theme.GoalsDarkBorder
 import com.julieasoreng.touchgrass.ui.theme.GoalsDarkMintText
 import com.julieasoreng.touchgrass.ui.theme.GoalsDarkTrack
-import com.julieasoreng.touchgrass.ui.theme.GoalsMint
 import com.julieasoreng.touchgrass.ui.theme.Quicksand
 
 @Composable
@@ -100,7 +99,7 @@ fun ActiveTimerScreen(
             val progress = 1f - session.remainingSeconds.toFloat() / session.targetSeconds.toFloat()
             FocusProgressRing(
                 progress = progress,
-                ringColor = GoalsMint,
+                ringColor = session.goal.color,
                 trackColor = GoalsDarkTrack,
                 modifier = Modifier.size(230.dp)
             ) {

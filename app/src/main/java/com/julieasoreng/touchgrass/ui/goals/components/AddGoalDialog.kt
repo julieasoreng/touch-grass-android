@@ -1,6 +1,7 @@
 package com.julieasoreng.touchgrass.ui.goals.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,19 +27,21 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.julieasoreng.touchgrass.data.goals.ACTIVITY_COLOR_OPTIONS
+import com.julieasoreng.touchgrass.data.goals.ACTIVITY_ICON_OPTIONS
 import com.julieasoreng.touchgrass.ui.theme.GoalsPurple
+import com.julieasoreng.touchgrass.ui.theme.GoalsTextMuted
 import com.julieasoreng.touchgrass.ui.theme.Quicksand
-
-private val emojiOptions = listOf("📖", "🎸", "📚", "🎨", "🏃", "✍️", "🧘", "🎹")
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AddGoalDialog(
     onDismiss: () -> Unit,
-    onConfirm: (name: String, emoji: String) -> Unit
+    onConfirm: (name: String, icon: String, color: Color) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
-    var selectedEmoji by remember { mutableStateOf(emojiOptions.first()) }
+    var selectedIcon by remember { mutableStateOf(ACTIVITY_ICON_OPTIONS.first()) }
+    var selectedColor by remember { mutableStateOf(ACTIVITY_COLOR_OPTIONS.first()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -52,28 +55,52 @@ fun AddGoalDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                Text("Icon", fontFamily = Quicksand, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = GoalsTextMuted)
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    emojiOptions.forEach { emoji ->
-                        val selected = emoji == selectedEmoji
+                    ACTIVITY_ICON_OPTIONS.forEach { icon ->
+                        val selected = icon == selectedIcon
                         Box(
                             modifier = Modifier
                                 .size(40.dp)
                                 .clip(CircleShape)
                                 .background(if (selected) GoalsPurple.copy(alpha = 0.2f) else Color.Transparent)
-                                .clickable { selectedEmoji = emoji },
+                                .clickable { selectedIcon = icon },
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(emoji, fontSize = 20.sp)
+                            Text(icon, fontSize = 20.sp)
                         }
+                    }
+                }
+                Text("Color", fontFamily = Quicksand, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = GoalsTextMuted)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ACTIVITY_COLOR_OPTIONS.forEach { color ->
+                        val selected = color == selectedColor
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(color)
+                                .then(
+                                    if (selected) {
+                                        Modifier.border(2.dp, GoalsPurple, CircleShape)
+                                    } else {
+                                        Modifier
+                                    }
+                                )
+                                .clickable { selectedColor = color }
+                        )
                     }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(name, selectedEmoji) }, enabled = name.isNotBlank()) {
+            TextButton(onClick = { onConfirm(name, selectedIcon, selectedColor) }, enabled = name.isNotBlank()) {
                 Text("Add", fontWeight = FontWeight.Bold, color = GoalsPurple)
             }
         },

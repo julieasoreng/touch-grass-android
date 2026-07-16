@@ -1,19 +1,18 @@
 package com.julieasoreng.touchgrass.ui.goals
 
 import android.content.Context
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.julieasoreng.touchgrass.data.goals.CompletedSession
 import com.julieasoreng.touchgrass.data.goals.CompletedSessionsRepository
 import com.julieasoreng.touchgrass.data.goals.Goal
+import com.julieasoreng.touchgrass.data.goals.seedActivityStyle
 import com.julieasoreng.touchgrass.data.goals.sessionsWithinCurrentWeek
 import com.julieasoreng.touchgrass.data.goals.weeklyCalendar
 import com.julieasoreng.touchgrass.data.preferences.OnboardingPreferencesRepository
 import com.julieasoreng.touchgrass.data.usage.ScreenTimeRepository
-import com.julieasoreng.touchgrass.ui.theme.GoalsLavender
-import com.julieasoreng.touchgrass.ui.theme.GoalsMint
-import com.julieasoreng.touchgrass.ui.theme.GoalsPeach
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -31,19 +30,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val ONBOARDING_GOAL_ID_PREFIX = "onboarding-"
-
-private val goalColorPalette = listOf(GoalsMint, GoalsPeach, GoalsLavender)
-
-private val knownActivityEmojis = mapOf(
-    "Reading" to "📖",
-    "Writing" to "✍️",
-    "Painting" to "🎨",
-    "Dancing" to "💃",
-    "Exercise" to "🏃",
-    "Journaling" to "📓"
-)
-
-private fun emojiForActivity(name: String): String = knownActivityEmojis[name] ?: "🌱"
 
 private fun goalIdForActivity(name: String): String = ONBOARDING_GOAL_ID_PREFIX + name.lowercase().replace(Regex("\\s+"), "-")
 
@@ -81,18 +67,22 @@ class GoalsViewModel(
     }
 
     /** Rebuilds onboarding-derived goals from the current activity list, but leaves any manually
-     *  added goals (from the "+ Add a new goal" dialog) untouched. */
+     *  added goals (from the "+ Add a new goal" dialog) untouched. Icon and color are seeded once
+     *  per activity name (see [seedActivityStyle]) so they never drift between screens. */
     private fun applyOnboardingActivities(currentGoals: List<Goal>, activities: List<String>): List<Goal> {
         val existingById = currentGoals.associateBy { it.id }
-        val onboardingGoals = activities.mapIndexed { index, name ->
+        val onboardingGoals = activities.map { name ->
             val id = goalIdForActivity(name)
-            existingById[id]?.copy(name = name) ?: Goal(
-                id = id,
-                name = name,
-                emoji = emojiForActivity(name),
-                color = goalColorPalette[index % goalColorPalette.size],
-                weeklyMinutes = 0
-            )
+            existingById[id]?.copy(name = name) ?: run {
+                val style = seedActivityStyle(name)
+                Goal(
+                    id = id,
+                    name = name,
+                    emoji = style.icon,
+                    color = style.color,
+                    weeklyMinutes = 0
+                )
+            }
         }
         val manuallyAddedGoals = currentGoals.filterNot { it.id.startsWith(ONBOARDING_GOAL_ID_PREFIX) }
         return onboardingGoals + manuallyAddedGoals
@@ -122,15 +112,14 @@ class GoalsViewModel(
         }
     }
 
-    fun addGoal(name: String, emoji: String) {
+    fun addGoal(name: String, icon: String, color: Color) {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return
         _uiState.update { state ->
-            val color = goalColorPalette[state.goals.size % goalColorPalette.size]
             val goal = Goal(
                 id = UUID.randomUUID().toString(),
                 name = trimmed,
-                emoji = emoji,
+                emoji = icon,
                 color = color,
                 weeklyMinutes = 0
             )

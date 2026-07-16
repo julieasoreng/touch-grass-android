@@ -63,8 +63,8 @@ fun MyGoalsScreen(
     if (showAddGoalDialog) {
         AddGoalDialog(
             onDismiss = { showAddGoalDialog = false },
-            onConfirm = { name, emoji ->
-                viewModel.addGoal(name, emoji)
+            onConfirm = { name, icon, color ->
+                viewModel.addGoal(name, icon, color)
                 showAddGoalDialog = false
             }
         )
