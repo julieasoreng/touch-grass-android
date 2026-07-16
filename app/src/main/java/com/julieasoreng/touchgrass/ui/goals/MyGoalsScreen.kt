@@ -37,7 +37,6 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.julieasoreng.touchgrass.data.preferences.OnboardingPreferencesRepository
 import com.julieasoreng.touchgrass.ui.goals.components.AddGoalDialog
 import com.julieasoreng.touchgrass.ui.goals.components.GoalCard
 import com.julieasoreng.touchgrass.ui.goals.components.dashedBorder
@@ -159,14 +158,18 @@ fun MyGoalsScreen(
         val totalReplacedMinutes = state.goals.sumOf { it.weeklyMinutes }
         val bannerText = remember(totalReplacedMinutes) {
             buildAnnotatedString {
-                append("You've replaced ")
-                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                    append(formatMinutes(totalReplacedMinutes))
+                if (totalReplacedMinutes <= 0) {
+                    append("Log your first session to see your progress here. ")
+                } else {
+                    append("You've replaced ")
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                        append(formatMinutes(totalReplacedMinutes))
+                    }
+                    append(" of scrolling this week. See your ")
                 }
-                append(" of scrolling this week. See your ")
                 pushStringAnnotation(tag = "summary", annotation = "summary")
                 withStyle(SpanStyle(textDecoration = TextDecoration.Underline)) {
-                    append("full summary")
+                    append(if (totalReplacedMinutes <= 0) "the summary" else "full summary")
                 }
                 pop()
                 append(".")
@@ -201,7 +204,7 @@ private fun MyGoalsScreenPreview() {
     val context = LocalContext.current
     BloomTheme {
         MyGoalsScreen(
-            viewModel = remember { GoalsViewModel(OnboardingPreferencesRepository(context.applicationContext)) },
+            viewModel = remember { GoalsViewModelFactory(context.applicationContext).create(GoalsViewModel::class.java) },
             onGoalSelected = {},
             onViewSummary = {}
         )

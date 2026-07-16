@@ -11,7 +11,7 @@ data class ActiveSession(
 data class GoalsUiState(
     val goals: List<Goal> = emptyList(),
     val activeSession: ActiveSession? = null,
-    val dailyScrollBeforeMinutes: Int = 190,
-    val dailyScrollThisWeekMinutes: Int = 80,
-    val focusStreakDays: Int = 5
+    val dailyScrollBeforeMinutes: Int = 0,
+    val dailyScrollThisWeekMinutes: Int = 0,
+    val focusStreakDays: Int = 0
 )

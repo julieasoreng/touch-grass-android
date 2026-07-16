@@ -41,6 +41,12 @@ class OnboardingPreferencesRepository(private val context: Context) {
         .map { prefs -> prefs[Keys.REPLACEMENT_ACTIVITIES]?.toList().orEmpty() }
         .distinctUntilChanged()
 
+    /** The one-time daily average screen time measured during onboarding — the "before" baseline
+     *  for any later before/after comparison. */
+    val dailyAverageScreenTimeMillis: Flow<Long> = context.dataStore.data
+        .map { prefs -> prefs[Keys.DAILY_AVERAGE_SCREEN_TIME_MILLIS] ?: 0L }
+        .distinctUntilChanged()
+
     suspend fun saveOnboardingAnswers(answers: OnboardingAnswers) {
         context.dataStore.edit { prefs ->
             prefs[Keys.DAILY_AVERAGE_SCREEN_TIME_MILLIS] = answers.dailyAverageScreenTimeMillis

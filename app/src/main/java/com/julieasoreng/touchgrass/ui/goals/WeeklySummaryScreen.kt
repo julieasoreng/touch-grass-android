@@ -28,7 +28,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.julieasoreng.touchgrass.data.preferences.OnboardingPreferencesRepository
 import com.julieasoreng.touchgrass.ui.goals.components.DonutChart
 import com.julieasoreng.touchgrass.ui.goals.components.DonutSlice
 import com.julieasoreng.touchgrass.ui.goals.components.ScrollComparisonBar
@@ -200,7 +199,7 @@ private fun WeeklySummaryScreenPreview() {
     val context = LocalContext.current
     BloomTheme {
         WeeklySummaryScreen(
-            viewModel = remember { GoalsViewModel(OnboardingPreferencesRepository(context.applicationContext)) },
+            viewModel = remember { GoalsViewModelFactory(context.applicationContext).create(GoalsViewModel::class.java) },
             onBack = {}
         )
     }
