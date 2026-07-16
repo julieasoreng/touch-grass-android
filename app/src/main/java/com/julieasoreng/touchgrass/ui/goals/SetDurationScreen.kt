@@ -88,7 +88,7 @@ fun SetDurationScreen(
                     .padding(8.dp)
             )
             Text(
-                text = goal.name,
+                text = "My Goals",
                 fontFamily = Quicksand,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp,
