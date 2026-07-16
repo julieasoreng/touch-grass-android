@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -86,7 +87,7 @@ fun SetDurationScreen(
                     .padding(8.dp)
             )
             Text(
-                text = goal.name,
+                text = "My Goals",
                 fontFamily = Quicksand,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp,
@@ -199,10 +200,11 @@ private fun StepperButton(symbol: String, onClick: () -> Unit) {
 @Preview(showBackground = true)
 @Composable
 private fun SetDurationScreenPreview() {
+    val context = LocalContext.current
     BloomTheme {
         SetDurationScreen(
             goalId = "read",
-            viewModel = remember { GoalsViewModel() },
+            viewModel = remember { GoalsViewModelFactory(context.applicationContext).create(GoalsViewModel::class.java) },
             onBack = {},
             onStartFocusing = {}
         )

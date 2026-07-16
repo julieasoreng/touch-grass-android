@@ -1,5 +1,7 @@
 package com.julieasoreng.touchgrass.ui.onboarding
 
+import android.content.Intent
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
@@ -17,67 +19,106 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.julieasoreng.touchgrass.ui.onboarding.components.AssistantChatBubble
 import com.julieasoreng.touchgrass.ui.onboarding.components.CustomActivityInput
+import com.julieasoreng.touchgrass.ui.onboarding.components.CustomGoalInput
+import com.julieasoreng.touchgrass.ui.onboarding.components.IntentionExampleBubble
+import com.julieasoreng.touchgrass.ui.onboarding.components.IntentionStatementInput
 import com.julieasoreng.touchgrass.ui.onboarding.components.OnboardingBottomCta
 import com.julieasoreng.touchgrass.ui.onboarding.components.OptionButton
 import com.julieasoreng.touchgrass.ui.onboarding.components.ProgressPills
+import com.julieasoreng.touchgrass.ui.onboarding.components.ScreenTimeSummaryBubble
+import com.julieasoreng.touchgrass.ui.onboarding.components.ScrollTimeInsightBubble
 import com.julieasoreng.touchgrass.ui.onboarding.components.SelectableChip
 import com.julieasoreng.touchgrass.ui.onboarding.components.UserChatBubble
+import com.julieasoreng.touchgrass.ui.theme.CharcoalText
 import com.julieasoreng.touchgrass.ui.theme.CreamBackground
-import com.julieasoreng.touchgrass.ui.theme.Lavender
 import com.julieasoreng.touchgrass.ui.theme.SageGreen
 
-private val usageOptions = listOf("Under 1 hour", "1–2 hours", "2–3 hours", "3–4 hours", "4+ hours")
-private val targetOptions = listOf("30 minutes", "45 minutes", "1 hour", "1.5 hours")
-private val scrollTimeOptions = listOf("Morning", "Midday", "After work", "Before bed")
 private val replacementOptions = listOf("Reading", "Writing", "Painting", "Dancing", "Exercise", "Journaling")
+
+private val naturalActivityPhrases = mapOf(
+    "Reading" to "read a book",
+    "Writing" to "write",
+    "Painting" to "paint",
+    "Dancing" to "dance",
+    "Exercise" to "exercise",
+    "Journaling" to "journal"
+)
+
+private fun naturalPhraseFor(activityLabel: String): String =
+    naturalActivityPhrases[activityLabel] ?: activityLabel.lowercase()
 
 private sealed interface TranscriptItem {
     data class Assistant(val text: String) : TranscriptItem
     data class UserAnswer(val text: String) : TranscriptItem
-    data object UsageOptions : TranscriptItem
+    data object ScreenTimeBaseline : TranscriptItem
     data object TargetOptions : TranscriptItem
-    data object ScrollTimeChips : TranscriptItem
+    data object ScrollPatternCard : TranscriptItem
     data object ReplacementChips : TranscriptItem
+    data object IntentionPrompt : TranscriptItem
 }
 
 private fun buildTranscript(state: OnboardingUiState): List<TranscriptItem> {
     val items = mutableListOf<TranscriptItem>()
 
+    if (!state.hasUsagePermission) {
+        items += TranscriptItem.Assistant(
+            "Hi, I'm Bloom 🌱 To show you your actual screen time, we need access to your phone's usage data."
+        )
+        return items
+    }
+
     items += TranscriptItem.Assistant(
-        "Hi, I'm Bloom 🌿 Let's shrink your screen time together. How much do you scroll, roughly, on an average day?"
+        "Hi, I'm Bloom 🌱 Here's your actual screen time, based on your phone's usage data."
     )
-    if (state.step == OnboardingStep.USAGE) items += TranscriptItem.UsageOptions
-    if (state.answers.currentUsage.isNotEmpty()) items += TranscriptItem.UserAnswer(state.answers.currentUsage)
+    items += TranscriptItem.ScreenTimeBaseline
 
     if (state.step.ordinal >= OnboardingStep.TARGET.ordinal) {
-        items += TranscriptItem.Assistant("Nice, thanks for being honest. What would you like to bring that down to, ideally?")
+        items += TranscriptItem.Assistant("Thanks for taking a look. What would you like to bring that down to, ideally?")
         if (state.step == OnboardingStep.TARGET) items += TranscriptItem.TargetOptions
-        if (state.answers.targetUsage.isNotEmpty()) items += TranscriptItem.UserAnswer(state.answers.targetUsage)
+        val targetMillis = state.answers.targetScreenTimeMillis
+        if (targetMillis != null) {
+            val preset = state.answers.targetPreset
+            val label = if (preset != null) {
+                "${preset.label} (down ${preset.reductionPercent}%) — ~${formatDuration(targetMillis)} per day"
+            } else {
+                val percentSuffix = state.answers.targetReductionPercent?.let { " (down $it%)" }.orEmpty()
+                "Custom goal$percentSuffix — ${formatDuration(targetMillis)} per day"
+            }
+            items += TranscriptItem.UserAnswer(label)
+        }
     }
 
     if (state.step.ordinal >= OnboardingStep.SCROLL_TIMES.ordinal) {
-        items += TranscriptItem.Assistant("When do you usually find yourself scrolling the most? Pick as many as you like.")
-        if (state.step == OnboardingStep.SCROLL_TIMES) items += TranscriptItem.ScrollTimeChips
-        if (state.answers.scrollTimes.isNotEmpty()) {
-            items += TranscriptItem.UserAnswer(state.answers.scrollTimes.joinToString(", "))
-        }
+        items += TranscriptItem.Assistant("Let's see when you tend to scroll the most.")
+        items += TranscriptItem.ScrollPatternCard
     }
 
     if (state.step.ordinal >= OnboardingStep.REPLACEMENT.ordinal) {
         items += TranscriptItem.Assistant("Last one — what would you like to be doing instead, when you'd normally be scrolling?")
         if (state.step == OnboardingStep.REPLACEMENT) items += TranscriptItem.ReplacementChips
+    }
+
+    if (state.step.ordinal >= OnboardingStep.INTENTION.ordinal) {
+        items += TranscriptItem.Assistant("Now let's make it concrete. Write your plan in your own words, like this:")
+        items += TranscriptItem.IntentionPrompt
     }
 
     return items
@@ -98,7 +139,18 @@ fun OnboardingScreen(
         viewModel.navigateToHome.collect { onOnboardingComplete() }
     }
 
-    BackHandler(enabled = state.step != OnboardingStep.USAGE) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshUsagePermission()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    BackHandler(enabled = state.step.ordinal > OnboardingStep.USAGE.ordinal) {
         viewModel.goBack()
     }
 
@@ -124,15 +176,33 @@ fun OnboardingScreen(
         },
         bottomBar = {
             when (state.step) {
+                OnboardingStep.USAGE_PERMISSION -> OnboardingBottomCta(
+                    text = "Open Settings",
+                    enabled = true,
+                    onClick = { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) },
+                    modifier = Modifier.padding(20.dp)
+                )
+                OnboardingStep.USAGE -> OnboardingBottomCta(
+                    text = "Continue",
+                    enabled = !state.isLoadingScreenTimeData,
+                    onClick = viewModel::confirmUsageBaseline,
+                    modifier = Modifier.padding(20.dp)
+                )
                 OnboardingStep.SCROLL_TIMES -> OnboardingBottomCta(
                     text = "Continue",
-                    enabled = state.selectedScrollTimes.isNotEmpty(),
-                    onClick = viewModel::confirmScrollTimes,
+                    enabled = !state.isLoadingScreenTimeData,
+                    onClick = viewModel::confirmScrollTimeInsight,
                     modifier = Modifier.padding(20.dp)
                 )
                 OnboardingStep.REPLACEMENT -> OnboardingBottomCta(
-                    text = "Let's start",
+                    text = "Continue",
                     enabled = state.selectedReplacementActivities.isNotEmpty(),
+                    onClick = viewModel::confirmReplacementSelection,
+                    modifier = Modifier.padding(20.dp)
+                )
+                OnboardingStep.INTENTION -> OnboardingBottomCta(
+                    text = "Continue",
+                    enabled = state.answers.intentionStatement.trim().length >= MIN_INTENTION_STATEMENT_LENGTH,
                     onClick = viewModel::completeOnboarding,
                     modifier = Modifier.padding(20.dp)
                 )
@@ -180,46 +250,57 @@ private fun TranscriptItemContent(
         is TranscriptItem.Assistant -> AssistantChatBubble(item.text)
         is TranscriptItem.UserAnswer -> UserChatBubble(item.text)
 
-        TranscriptItem.UsageOptions -> Column(
-            modifier = Modifier.padding(start = 40.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            usageOptions.forEach { option ->
-                OptionButton(
-                    text = option,
-                    selected = state.answers.currentUsage == option,
-                    onClick = { viewModel.selectUsage(option) }
-                )
-            }
-        }
+        TranscriptItem.ScreenTimeBaseline -> ScreenTimeSummaryBubble(
+            isLoading = state.isLoadingScreenTimeData,
+            dailyAverageMillis = state.answers.dailyAverageScreenTimeMillis,
+            daysOfData = state.answers.screenTimeDaysOfData
+        )
 
         TranscriptItem.TargetOptions -> Column(
             modifier = Modifier.padding(start = 40.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            targetOptions.forEach { option ->
+            val baselineMillis = state.answers.dailyAverageScreenTimeMillis
+            val hasBaseline = state.answers.screenTimeDaysOfData > 0
+
+            if (hasBaseline) {
+                TargetPreset.entries.forEach { preset ->
+                    OptionButton(
+                        text = "${preset.label} (down ${preset.reductionPercent}%)",
+                        subtitle = "~${formatDuration(preset.targetMillis(baselineMillis))} per day",
+                        selected = state.answers.targetPreset == preset,
+                        onClick = { viewModel.selectTargetPreset(preset) }
+                    )
+                }
+            } else {
+                Text(
+                    text = "We don't have enough data yet to suggest a target — check back after a day of tracking.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = CharcoalText.copy(alpha = 0.7f)
+                )
+            }
+
+            if (state.isEnteringCustomTarget) {
+                CustomGoalInput(
+                    value = state.customTargetInputText,
+                    onValueChange = viewModel::updateCustomTargetInput,
+                    onConfirm = viewModel::confirmCustomTarget,
+                    baselineMillis = baselineMillis
+                )
+            } else {
                 OptionButton(
-                    text = option,
-                    selected = state.answers.targetUsage == option,
-                    onClick = { viewModel.selectTarget(option) }
+                    text = "Set my own goal",
+                    selected = state.answers.targetPreset == null && state.answers.targetScreenTimeMillis != null,
+                    onClick = viewModel::startCustomTargetEntry
                 )
             }
         }
 
-        TranscriptItem.ScrollTimeChips -> FlowRow(
-            modifier = Modifier.padding(start = 40.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            scrollTimeOptions.forEach { option ->
-                SelectableChip(
-                    text = option,
-                    selected = option in state.selectedScrollTimes,
-                    selectedColor = Lavender,
-                    onClick = { viewModel.toggleScrollTime(option) }
-                )
-            }
-        }
+        TranscriptItem.ScrollPatternCard -> ScrollTimeInsightBubble(
+            isLoading = state.isLoadingScreenTimeData,
+            dominantPattern = state.answers.scrollTimePattern,
+            daysOfData = state.answers.scrollTimePatternDaysOfData
+        )
 
         TranscriptItem.ReplacementChips -> Column(
             modifier = Modifier.padding(start = 40.dp),
@@ -251,6 +332,20 @@ private fun TranscriptItemContent(
                 value = state.customActivityText,
                 onValueChange = viewModel::updateCustomActivityText,
                 onConfirm = viewModel::addCustomActivity
+            )
+        }
+
+        TranscriptItem.IntentionPrompt -> Column(
+            modifier = Modifier.padding(start = 40.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            val activityPhrase = state.answers.replacementActivities.firstOrNull()
+                ?.let { naturalPhraseFor(it) }
+                ?: "your chosen activity"
+            IntentionExampleBubble(activityPhrase = activityPhrase)
+            IntentionStatementInput(
+                value = state.answers.intentionStatement,
+                onValueChange = viewModel::updateIntentionStatement
             )
         }
     }

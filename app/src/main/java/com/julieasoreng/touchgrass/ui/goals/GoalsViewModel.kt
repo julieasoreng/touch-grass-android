@@ -1,13 +1,20 @@
 package com.julieasoreng.touchgrass.ui.goals
 
+import android.content.Context
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.julieasoreng.touchgrass.data.goals.CompletedSession
+import com.julieasoreng.touchgrass.data.goals.CompletedSessionsRepository
 import com.julieasoreng.touchgrass.data.goals.Goal
-import com.julieasoreng.touchgrass.ui.theme.GoalsLavender
-import com.julieasoreng.touchgrass.ui.theme.GoalsMint
-import com.julieasoreng.touchgrass.ui.theme.GoalsPeach
+import com.julieasoreng.touchgrass.data.goals.seedActivityStyle
+import com.julieasoreng.touchgrass.data.goals.sessionsWithinCurrentWeek
+import com.julieasoreng.touchgrass.data.goals.weeklyCalendar
+import com.julieasoreng.touchgrass.data.preferences.OnboardingPreferencesRepository
+import com.julieasoreng.touchgrass.data.usage.ScreenTimeRepository
 import java.util.UUID
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -15,21 +22,24 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
-private val goalColorPalette = listOf(GoalsMint, GoalsPeach, GoalsLavender)
+private const val ONBOARDING_GOAL_ID_PREFIX = "onboarding-"
 
-private val initialGoals = listOf(
-    Goal(id = "read", name = "Read", emoji = "📖", color = GoalsMint, weeklyMinutes = 260),
-    Goal(id = "guitar", name = "Play guitar", emoji = "🎸", color = GoalsPeach, weeklyMinutes = 65),
-    Goal(id = "study", name = "Study", emoji = "📚", color = GoalsLavender, weeklyMinutes = 160)
-)
+private fun goalIdForActivity(name: String): String = ONBOARDING_GOAL_ID_PREFIX + name.lowercase().replace(Regex("\\s+"), "-")
 
-class GoalsViewModel : ViewModel() {
+class GoalsViewModel(
+    private val onboardingPreferencesRepository: OnboardingPreferencesRepository,
+    private val completedSessionsRepository: CompletedSessionsRepository,
+    private val screenTimeRepository: ScreenTimeRepository
+) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(GoalsUiState(goals = initialGoals))
+    private val _uiState = MutableStateFlow(GoalsUiState())
     val uiState: StateFlow<GoalsUiState> = _uiState.asStateFlow()
 
     private val _sessionEnded = Channel<Unit>(Channel.BUFFERED)
@@ -37,15 +47,79 @@ class GoalsViewModel : ViewModel() {
 
     private var tickJob: Job? = null
 
-    fun addGoal(name: String, emoji: String) {
+    init {
+        viewModelScope.launch {
+            combine(
+                onboardingPreferencesRepository.replacementActivities,
+                completedSessionsRepository.sessions
+            ) { activities, sessions -> activities to sessions }
+                .collect { (activities, sessions) ->
+                    _uiState.update { state ->
+                        val goalsWithIdentity = applyOnboardingActivities(state.goals, activities)
+                        state.copy(
+                            goals = applyWeeklyMinutes(goalsWithIdentity, sessionsWithinCurrentWeek(sessions)),
+                            weeklyCalendar = weeklyCalendar(sessions)
+                        )
+                    }
+                }
+        }
+        viewModelScope.launch { loadScrollComparison() }
+    }
+
+    /** Rebuilds onboarding-derived goals from the current activity list, but leaves any manually
+     *  added goals (from the "+ Add a new goal" dialog) untouched. Icon and color are seeded once
+     *  per activity name (see [seedActivityStyle]) so they never drift between screens. */
+    private fun applyOnboardingActivities(currentGoals: List<Goal>, activities: List<String>): List<Goal> {
+        val existingById = currentGoals.associateBy { it.id }
+        val onboardingGoals = activities.map { name ->
+            val id = goalIdForActivity(name)
+            existingById[id]?.copy(name = name) ?: run {
+                val style = seedActivityStyle(name)
+                Goal(
+                    id = id,
+                    name = name,
+                    emoji = style.icon,
+                    color = style.color,
+                    weeklyMinutes = 0
+                )
+            }
+        }
+        val manuallyAddedGoals = currentGoals.filterNot { it.id.startsWith(ONBOARDING_GOAL_ID_PREFIX) }
+        return onboardingGoals + manuallyAddedGoals
+    }
+
+    /** Recomputes every goal's weeklyMinutes from this week's logged sessions — the single source
+     *  of truth, replacing the old in-memory running total. */
+    private fun applyWeeklyMinutes(goals: List<Goal>, weekSessions: List<CompletedSession>): List<Goal> {
+        val minutesByGoalId = weekSessions.groupBy { it.goalId }.mapValues { (_, sessions) -> sessions.sumOf { it.minutes } }
+        return goals.map { goal -> goal.copy(weeklyMinutes = minutesByGoalId[goal.id] ?: 0) }
+    }
+
+    /** One-time "before" (onboarding baseline) vs. "after" (freshly measured) scroll-time comparison. */
+    private suspend fun loadScrollComparison() {
+        val beforeMillis = onboardingPreferencesRepository.dailyAverageScreenTimeMillis.first()
+        val afterBaseline = if (screenTimeRepository.hasUsageAccessPermission()) {
+            withContext(Dispatchers.IO) { screenTimeRepository.getSocialMediaBaseline() }
+        } else {
+            null
+        }
+        _uiState.update {
+            it.copy(
+                dailyScrollBeforeMinutes = (beforeMillis / 60_000L).toInt(),
+                dailyScrollAfterMinutes = ((afterBaseline?.dailyAverageMillis ?: 0L) / 60_000L).toInt(),
+                scrollAfterDaysOfData = afterBaseline?.daysOfData ?: 0
+            )
+        }
+    }
+
+    fun addGoal(name: String, icon: String, color: Color) {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return
         _uiState.update { state ->
-            val color = goalColorPalette[state.goals.size % goalColorPalette.size]
             val goal = Goal(
                 id = UUID.randomUUID().toString(),
                 name = trimmed,
-                emoji = emoji,
+                emoji = icon,
                 color = color,
                 weeklyMinutes = 0
             )
@@ -96,19 +170,20 @@ class GoalsViewModel : ViewModel() {
 
     private fun logReplacedMinutes(goalId: String, minutes: Int) {
         if (minutes <= 0) return
-        _uiState.update { state ->
-            state.copy(
-                goals = state.goals.map { goal ->
-                    if (goal.id == goalId) goal.copy(weeklyMinutes = goal.weeklyMinutes + minutes) else goal
-                }
-            )
+        val completedAt = System.currentTimeMillis()
+        viewModelScope.launch {
+            completedSessionsRepository.logSession(goalId, minutes, completedAt)
         }
     }
 }
 
-class GoalsViewModelFactory : ViewModelProvider.Factory {
+class GoalsViewModelFactory(context: Context) : ViewModelProvider.Factory {
+    private val onboardingPreferencesRepository = OnboardingPreferencesRepository(context.applicationContext)
+    private val completedSessionsRepository = CompletedSessionsRepository(context.applicationContext)
+    private val screenTimeRepository = ScreenTimeRepository(context.applicationContext)
+
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        return GoalsViewModel() as T
+        return GoalsViewModel(onboardingPreferencesRepository, completedSessionsRepository, screenTimeRepository) as T
     }
 }

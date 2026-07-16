@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -63,8 +64,8 @@ fun MyGoalsScreen(
     if (showAddGoalDialog) {
         AddGoalDialog(
             onDismiss = { showAddGoalDialog = false },
-            onConfirm = { name, emoji ->
-                viewModel.addGoal(name, emoji)
+            onConfirm = { name, icon, color ->
+                viewModel.addGoal(name, icon, color)
                 showAddGoalDialog = false
             }
         )
@@ -117,6 +118,15 @@ fun MyGoalsScreen(
         )
 
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (state.goals.isEmpty()) {
+                Text(
+                    text = "No goals yet — add one below to get started.",
+                    fontFamily = Inter,
+                    fontSize = 14.sp,
+                    color = GoalsTextMuted
+                )
+            }
+
             state.goals.forEach { goal ->
                 key(goal.id) {
                     GoalCard(
@@ -156,14 +166,18 @@ fun MyGoalsScreen(
         val totalReplacedMinutes = state.goals.sumOf { it.weeklyMinutes }
         val bannerText = remember(totalReplacedMinutes) {
             buildAnnotatedString {
-                append("You've replaced ")
-                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                    append(formatMinutes(totalReplacedMinutes))
+                if (totalReplacedMinutes <= 0) {
+                    append("Log your first session to see your progress here. ")
+                } else {
+                    append("You've replaced ")
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                        append(formatMinutes(totalReplacedMinutes))
+                    }
+                    append(" of scrolling this week. See your ")
                 }
-                append(" of scrolling this week. See your ")
                 pushStringAnnotation(tag = "summary", annotation = "summary")
                 withStyle(SpanStyle(textDecoration = TextDecoration.Underline)) {
-                    append("full summary")
+                    append(if (totalReplacedMinutes <= 0) "the summary" else "full summary")
                 }
                 pop()
                 append(".")
@@ -195,9 +209,10 @@ fun MyGoalsScreen(
 @Preview(showBackground = true)
 @Composable
 private fun MyGoalsScreenPreview() {
+    val context = LocalContext.current
     BloomTheme {
         MyGoalsScreen(
-            viewModel = remember { GoalsViewModel() },
+            viewModel = remember { GoalsViewModelFactory(context.applicationContext).create(GoalsViewModel::class.java) },
             onGoalSelected = {},
             onViewSummary = {},
             onOpenLockSettings = {}

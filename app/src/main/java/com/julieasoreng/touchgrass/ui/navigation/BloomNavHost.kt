@@ -2,6 +2,7 @@ package com.julieasoreng.touchgrass.ui.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -29,7 +30,9 @@ fun BloomNavHost(
     onPostUnlockConsumed: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    val goalsViewModel: GoalsViewModel = viewModel(factory = GoalsViewModelFactory())
+    val goalsViewModel: GoalsViewModel = viewModel(
+        factory = remember { GoalsViewModelFactory(context.applicationContext) }
+    )
     val lockFeatureViewModel: LockFeatureViewModel = viewModel(
         factory = LockFeatureViewModelFactory(context.applicationContext)
     )
