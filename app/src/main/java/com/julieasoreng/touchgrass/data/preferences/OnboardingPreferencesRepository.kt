@@ -47,6 +47,12 @@ class OnboardingPreferencesRepository(private val context: Context) {
         .map { prefs -> prefs[Keys.DAILY_AVERAGE_SCREEN_TIME_MILLIS] ?: 0L }
         .distinctUntilChanged()
 
+    /** Whether onboarding has already been completed on this device — used at app launch to skip
+     *  straight to My Goals instead of re-running onboarding (and clobbering the saved answers). */
+    val isOnboardingComplete: Flow<Boolean> = context.dataStore.data
+        .map { prefs -> prefs[Keys.ONBOARDING_COMPLETE] ?: false }
+        .distinctUntilChanged()
+
     suspend fun saveOnboardingAnswers(answers: OnboardingAnswers) {
         context.dataStore.edit { prefs ->
             prefs[Keys.DAILY_AVERAGE_SCREEN_TIME_MILLIS] = answers.dailyAverageScreenTimeMillis
