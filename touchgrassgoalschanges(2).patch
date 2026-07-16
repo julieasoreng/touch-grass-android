@@ -1,0 +1,925 @@
+From ddbc49148232cae7969f0eea65b64d09d3b0e1bf Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 15 Jul 2026 11:30:37 +0000
+Subject: [PATCH] Drive goals and summary from real user data
+
+- Seed My Goals from the activities chosen during onboarding instead
+  of hardcoded fake goals; weekly minutes now start at 0.
+- Give each goal a user-assigned color + icon (picker in the add-goal
+  dialog), applied consistently across goal cards, the summary donut,
+  the weekly calendar, and the focus timer ring.
+- Replace the streak banner and fake before/after scroll chart with a
+  real weekly calendar showing minutes per activity per day.
+- Rename the set-duration back label from the goal name to "My Goals".
+- Add a bottom nav bar to toggle between My Goals and This week.
+---
+ .../touchgrass/ui/goals/ActiveTimerScreen.kt  |  10 +-
+ .../touchgrass/ui/goals/ActivityStyle.kt      |  36 +++++
+ .../touchgrass/ui/goals/GoalsUiState.kt       |   5 +-
+ .../touchgrass/ui/goals/GoalsViewModel.kt     |  42 ++++--
+ .../touchgrass/ui/goals/MyGoalsScreen.kt      |  22 ++-
+ .../touchgrass/ui/goals/SetDurationScreen.kt  |   9 +-
+ .../ui/goals/WeeklySummaryScreen.kt           |  79 +++-------
+ .../ui/goals/components/AddGoalDialog.kt      |  38 ++++-
+ .../ui/goals/components/HomeBottomBar.kt      |  82 +++++++++++
+ .../goals/components/ScrollComparisonBar.kt   |  72 ---------
+ .../components/WeeklyActivityCalendar.kt      | 137 ++++++++++++++++++
+ .../touchgrass/ui/navigation/BloomNavHost.kt  |   3 +-
+ .../ui/onboarding/OnboardingScreen.kt         |   4 +-
+ .../ui/onboarding/OnboardingViewModel.kt      |   6 +-
+ .../julieasoreng/touchgrass/ui/theme/Color.kt |   2 +
+ 15 files changed, 376 insertions(+), 171 deletions(-)
+ create mode 100644 app/src/main/java/com/julieasoreng/touchgrass/ui/goals/ActivityStyle.kt
+ create mode 100644 app/src/main/java/com/julieasoreng/touchgrass/ui/goals/components/HomeBottomBar.kt
+ delete mode 100644 app/src/main/java/com/julieasoreng/touchgrass/ui/goals/components/ScrollComparisonBar.kt
+ create mode 100644 app/src/main/java/com/julieasoreng/touchgrass/ui/goals/components/WeeklyActivityCalendar.kt
+
+diff --git a/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/ActiveTimerScreen.kt b/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/ActiveTimerScreen.kt
+index 161bf67..c26d6fe 100644
+--- a/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/ActiveTimerScreen.kt
++++ b/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/ActiveTimerScreen.kt
+@@ -99,7 +99,7 @@ fun ActiveTimerScreen(
+             val progress = 1f - session.remainingSeconds.toFloat() / session.targetSeconds.toFloat()
+             FocusProgressRing(
+                 progress = progress,
+-                ringColor = GoalsMint,
++                ringColor = session.goal.color,
+                 trackColor = GoalsDarkTrack,
+                 modifier = Modifier.size(230.dp)
+             ) {
+@@ -151,10 +151,14 @@ fun ActiveTimerScreen(
+ private fun ActiveTimerScreenPreview() {
+     BloomTheme {
+         val viewModel = remember {
+-            GoalsViewModel().apply { startSession("read", 25) }
++            GoalsViewModel().apply {
++                addGoal("Read", "📖", GoalsMint)
++                startSession(uiState.value.goals.first().id, 25)
++            }
+         }
++        val goalId = viewModel.uiState.value.activeSession?.goal?.id.orEmpty()
+         ActiveTimerScreen(
+-            goalId = "read",
++            goalId = goalId,
+             minutes = 25,
+             viewModel = viewModel,
+             onSessionEnded = {}
+diff --git a/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/ActivityStyle.kt b/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/ActivityStyle.kt
+new file mode 100644
+index 0000000..12419e2
+--- /dev/null
++++ b/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/ActivityStyle.kt
+@@ -0,0 +1,36 @@
++package com.julieasoreng.touchgrass.ui.goals
++
++import androidx.compose.ui.graphics.Color
++import com.julieasoreng.touchgrass.ui.theme.GoalsButter
++import com.julieasoreng.touchgrass.ui.theme.GoalsDustyRose
++import com.julieasoreng.touchgrass.ui.theme.GoalsLavender
++import com.julieasoreng.touchgrass.ui.theme.GoalsMint
++import com.julieasoreng.touchgrass.ui.theme.GoalsPeach
++import com.julieasoreng.touchgrass.ui.theme.GoalsSky
++
++val activityColorPalette = listOf(
++    GoalsMint,
++    GoalsPeach,
++    GoalsLavender,
++    GoalsDustyRose,
++    GoalsSky,
++    GoalsButter
++)
++
++val activityIconOptions = listOf("📖", "🎸", "📚", "🎨", "🏃", "✍️", "🧘", "🎹", "💃", "📓", "🚶", "🌱")
++
++private val knownActivityIcons = mapOf(
++    "reading" to "📖",
++    "writing" to "✍️",
++    "painting" to "🎨",
++    "dancing" to "💃",
++    "exercise" to "🏃",
++    "journaling" to "📓"
++)
++
++fun colorForIndex(index: Int): Color = activityColorPalette[index % activityColorPalette.size]
++
++fun defaultIconFor(activityName: String, fallbackIndex: Int): String {
++    return knownActivityIcons[activityName.trim().lowercase()]
++        ?: activityIconOptions[fallbackIndex % activityIconOptions.size]
++}
+diff --git a/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/GoalsUiState.kt b/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/GoalsUiState.kt
+index a7f73dd..729d287 100644
+--- a/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/GoalsUiState.kt
++++ b/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/GoalsUiState.kt
+@@ -1,6 +1,7 @@
+ package com.julieasoreng.touchgrass.ui.goals
+ 
+ import com.julieasoreng.touchgrass.data.goals.Goal
++import java.time.DayOfWeek
+ 
+ data class ActiveSession(
+     val goal: Goal,
+@@ -11,7 +12,5 @@ data class ActiveSession(
+ data class GoalsUiState(
+     val goals: List<Goal> = emptyList(),
+     val activeSession: ActiveSession? = null,
+-    val dailyScrollBeforeMinutes: Int = 190,
+-    val dailyScrollThisWeekMinutes: Int = 80,
+-    val focusStreakDays: Int = 5
++    val dailyLog: Map<DayOfWeek, Map<String, Int>> = emptyMap()
+ )
+diff --git a/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/GoalsViewModel.kt b/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/GoalsViewModel.kt
+index 6943359..f87e3e6 100644
+--- a/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/GoalsViewModel.kt
++++ b/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/GoalsViewModel.kt
+@@ -1,12 +1,12 @@
+ package com.julieasoreng.touchgrass.ui.goals
+ 
++import androidx.compose.ui.graphics.Color
+ import androidx.lifecycle.ViewModel
+ import androidx.lifecycle.ViewModelProvider
+ import androidx.lifecycle.viewModelScope
+ import com.julieasoreng.touchgrass.data.goals.Goal
+-import com.julieasoreng.touchgrass.ui.theme.GoalsLavender
+-import com.julieasoreng.touchgrass.ui.theme.GoalsMint
+-import com.julieasoreng.touchgrass.ui.theme.GoalsPeach
++import java.time.DayOfWeek
++import java.time.LocalDate
+ import java.util.UUID
+ import kotlinx.coroutines.Job
+ import kotlinx.coroutines.channels.Channel
+@@ -19,17 +19,9 @@ import kotlinx.coroutines.flow.receiveAsFlow
+ import kotlinx.coroutines.flow.update
+ import kotlinx.coroutines.launch
+ 
+-private val goalColorPalette = listOf(GoalsMint, GoalsPeach, GoalsLavender)
+-
+-private val initialGoals = listOf(
+-    Goal(id = "read", name = "Read", emoji = "📖", color = GoalsMint, weeklyMinutes = 260),
+-    Goal(id = "guitar", name = "Play guitar", emoji = "🎸", color = GoalsPeach, weeklyMinutes = 65),
+-    Goal(id = "study", name = "Study", emoji = "📚", color = GoalsLavender, weeklyMinutes = 160)
+-)
+-
+ class GoalsViewModel : ViewModel() {
+ 
+-    private val _uiState = MutableStateFlow(GoalsUiState(goals = initialGoals))
++    private val _uiState = MutableStateFlow(GoalsUiState())
+     val uiState: StateFlow<GoalsUiState> = _uiState.asStateFlow()
+ 
+     private val _sessionEnded = Channel<Unit>(Channel.BUFFERED)
+@@ -37,11 +29,26 @@ class GoalsViewModel : ViewModel() {
+ 
+     private var tickJob: Job? = null
+ 
+-    fun addGoal(name: String, emoji: String) {
++    fun initializeGoals(activityNames: List<String>) {
++        if (_uiState.value.goals.isNotEmpty()) return
++        val goals = activityNames.mapIndexedNotNull { index, name ->
++            val trimmed = name.trim()
++            if (trimmed.isEmpty()) return@mapIndexedNotNull null
++            Goal(
++                id = UUID.randomUUID().toString(),
++                name = trimmed,
++                emoji = defaultIconFor(trimmed, index),
++                color = colorForIndex(index),
++                weeklyMinutes = 0
++            )
++        }
++        _uiState.update { it.copy(goals = goals) }
++    }
++
++    fun addGoal(name: String, emoji: String, color: Color) {
+         val trimmed = name.trim()
+         if (trimmed.isEmpty()) return
+         _uiState.update { state ->
+-            val color = goalColorPalette[state.goals.size % goalColorPalette.size]
+             val goal = Goal(
+                 id = UUID.randomUUID().toString(),
+                 name = trimmed,
+@@ -96,11 +103,16 @@ class GoalsViewModel : ViewModel() {
+ 
+     private fun logReplacedMinutes(goalId: String, minutes: Int) {
+         if (minutes <= 0) return
++        val today: DayOfWeek = LocalDate.now().dayOfWeek
+         _uiState.update { state ->
++            val todayLog = state.dailyLog[today].orEmpty()
++            val updatedGoalMinutes = (todayLog[goalId] ?: 0) + minutes
++            val updatedTodayLog = todayLog + (goalId to updatedGoalMinutes)
+             state.copy(
+                 goals = state.goals.map { goal ->
+                     if (goal.id == goalId) goal.copy(weeklyMinutes = goal.weeklyMinutes + minutes) else goal
+-                }
++                },
++                dailyLog = state.dailyLog + (today to updatedTodayLog)
+             )
+         }
+     }
+diff --git a/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/MyGoalsScreen.kt b/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/MyGoalsScreen.kt
+index a3abeea..3eeb3ee 100644
+--- a/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/MyGoalsScreen.kt
++++ b/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/MyGoalsScreen.kt
+@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
+ import androidx.compose.foundation.shape.RoundedCornerShape
+ import androidx.compose.foundation.text.ClickableText
+ import androidx.compose.foundation.verticalScroll
++import androidx.compose.material3.Scaffold
+ import androidx.compose.material3.Text
+ import androidx.compose.runtime.Composable
+ import androidx.compose.runtime.collectAsState
+@@ -38,6 +39,8 @@ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.sp
+ import com.julieasoreng.touchgrass.ui.goals.components.AddGoalDialog
+ import com.julieasoreng.touchgrass.ui.goals.components.GoalCard
++import com.julieasoreng.touchgrass.ui.goals.components.HomeBottomBar
++import com.julieasoreng.touchgrass.ui.goals.components.HomeTab
+ import com.julieasoreng.touchgrass.ui.goals.components.dashedBorder
+ import com.julieasoreng.touchgrass.ui.theme.BloomTheme
+ import com.julieasoreng.touchgrass.ui.theme.GoalsBackground
+@@ -62,18 +65,30 @@ fun MyGoalsScreen(
+     if (showAddGoalDialog) {
+         AddGoalDialog(
+             onDismiss = { showAddGoalDialog = false },
+-            onConfirm = { name, emoji ->
+-                viewModel.addGoal(name, emoji)
++            onConfirm = { name, emoji, color ->
++                viewModel.addGoal(name, emoji, color)
+                 showAddGoalDialog = false
+             }
+         )
+     }
+ 
++    Scaffold(
++        modifier = modifier,
++        containerColor = GoalsBackground,
++        bottomBar = {
++            HomeBottomBar(
++                selectedTab = HomeTab.GOALS,
++                onSelectGoals = {},
++                onSelectSummary = onViewSummary
++            )
++        }
++    ) { innerPadding ->
+     Column(
+-        modifier = modifier
++        modifier = Modifier
+             .fillMaxSize()
+             .background(GoalsBackground)
+             .verticalScroll(rememberScrollState())
++            .padding(innerPadding)
+             .padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 24.dp),
+         verticalArrangement = Arrangement.spacedBy(16.dp)
+     ) {
+@@ -182,6 +197,7 @@ fun MyGoalsScreen(
+             )
+         }
+     }
++    }
+ }
+ 
+ @Preview(showBackground = true)
+diff --git a/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/SetDurationScreen.kt b/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/SetDurationScreen.kt
+index 74f24f4..bbfa245 100644
+--- a/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/SetDurationScreen.kt
++++ b/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/SetDurationScreen.kt
+@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.sp
+ import com.julieasoreng.touchgrass.ui.theme.BloomTheme
+ import com.julieasoreng.touchgrass.ui.theme.GoalsBackground
++import com.julieasoreng.touchgrass.ui.theme.GoalsMint
+ import com.julieasoreng.touchgrass.ui.theme.GoalsPurple
+ import com.julieasoreng.touchgrass.ui.theme.GoalsTextMuted
+ import com.julieasoreng.touchgrass.ui.theme.GoalsTextPrimary
+@@ -86,7 +87,7 @@ fun SetDurationScreen(
+                     .padding(8.dp)
+             )
+             Text(
+-                text = goal.name,
++                text = "My Goals",
+                 fontFamily = Quicksand,
+                 fontWeight = FontWeight.Bold,
+                 fontSize = 15.sp,
+@@ -200,9 +201,11 @@ private fun StepperButton(symbol: String, onClick: () -> Unit) {
+ @Composable
+ private fun SetDurationScreenPreview() {
+     BloomTheme {
++        val viewModel = remember { GoalsViewModel().apply { addGoal("Read", "📖", GoalsMint) } }
++        val goalId = viewModel.uiState.value.goals.first().id
+         SetDurationScreen(
+-            goalId = "read",
+-            viewModel = remember { GoalsViewModel() },
++            goalId = goalId,
++            viewModel = viewModel,
+             onBack = {},
+             onStartFocusing = {}
+         )
+diff --git a/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/WeeklySummaryScreen.kt b/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/WeeklySummaryScreen.kt
+index bd0fa45..3cd4aec 100644
+--- a/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/WeeklySummaryScreen.kt
++++ b/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/WeeklySummaryScreen.kt
+@@ -1,7 +1,6 @@
+ package com.julieasoreng.touchgrass.ui.goals
+ 
+ import androidx.compose.foundation.background
+-import androidx.compose.foundation.clickable
+ import androidx.compose.foundation.layout.Arrangement
+ import androidx.compose.foundation.layout.Box
+ import androidx.compose.foundation.layout.Column
+@@ -14,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
+ import androidx.compose.foundation.shape.CircleShape
+ import androidx.compose.foundation.shape.RoundedCornerShape
+ import androidx.compose.foundation.verticalScroll
++import androidx.compose.material3.Scaffold
+ import androidx.compose.material3.Text
+ import androidx.compose.runtime.Composable
+ import androidx.compose.runtime.collectAsState
+@@ -29,18 +29,15 @@ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.sp
+ import com.julieasoreng.touchgrass.ui.goals.components.DonutChart
+ import com.julieasoreng.touchgrass.ui.goals.components.DonutSlice
+-import com.julieasoreng.touchgrass.ui.goals.components.ScrollComparisonBar
++import com.julieasoreng.touchgrass.ui.goals.components.HomeBottomBar
++import com.julieasoreng.touchgrass.ui.goals.components.HomeTab
++import com.julieasoreng.touchgrass.ui.goals.components.WeeklyActivityCalendar
+ import com.julieasoreng.touchgrass.ui.theme.BloomTheme
+ import com.julieasoreng.touchgrass.ui.theme.GoalsBackground
+-import com.julieasoreng.touchgrass.ui.theme.GoalsDustyRose
+-import com.julieasoreng.touchgrass.ui.theme.GoalsMint
+-import com.julieasoreng.touchgrass.ui.theme.GoalsMintDark
+-import com.julieasoreng.touchgrass.ui.theme.GoalsMintBannerText
+ import com.julieasoreng.touchgrass.ui.theme.GoalsTextMuted
+ import com.julieasoreng.touchgrass.ui.theme.GoalsTextPrimary
+ import com.julieasoreng.touchgrass.ui.theme.Inter
+ import com.julieasoreng.touchgrass.ui.theme.Quicksand
+-import kotlin.math.roundToInt
+ 
+ @Composable
+ fun WeeklySummaryScreen(
+@@ -52,21 +49,26 @@ fun WeeklySummaryScreen(
+     val goals = state.goals
+     val totalMinutes = goals.sumOf { it.weeklyMinutes }
+ 
++    Scaffold(
++        modifier = modifier,
++        containerColor = GoalsBackground,
++        bottomBar = {
++            HomeBottomBar(
++                selectedTab = HomeTab.SUMMARY,
++                onSelectGoals = onBack,
++                onSelectSummary = {}
++            )
++        }
++    ) { innerPadding ->
+     Column(
+-        modifier = modifier
++        modifier = Modifier
+             .fillMaxSize()
+             .background(GoalsBackground)
+             .verticalScroll(rememberScrollState())
++            .padding(innerPadding)
+             .padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 24.dp),
+         verticalArrangement = Arrangement.spacedBy(18.dp)
+     ) {
+-        Text(
+-            text = "‹",
+-            fontSize = 22.sp,
+-            color = GoalsTextMuted,
+-            modifier = Modifier.clickable(onClick = onBack)
+-        )
+-
+         Column {
+             Text(
+                 text = "This week",
+@@ -138,58 +140,17 @@ fun WeeklySummaryScreen(
+                 .padding(vertical = 18.dp, horizontal = 20.dp)
+         ) {
+             Text(
+-                text = "Scroll time, before vs. after",
++                text = "This week, day by day",
+                 fontFamily = Quicksand,
+                 fontWeight = FontWeight.Bold,
+                 fontSize = 15.sp,
+                 color = GoalsTextPrimary,
+                 modifier = Modifier.padding(bottom = 14.dp)
+             )
+-            val before = state.dailyScrollBeforeMinutes
+-            val after = state.dailyScrollThisWeekMinutes
+-            val maxMinutes = before.coerceAtLeast(after).coerceAtLeast(1)
+-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+-                ScrollComparisonBar(
+-                    label = "Before",
+-                    valueLabel = formatMinutes(before),
+-                    fraction = before.toFloat() / maxMinutes,
+-                    barColor = GoalsDustyRose
+-                )
+-                ScrollComparisonBar(
+-                    label = "This week",
+-                    valueLabel = formatMinutes(after),
+-                    fraction = after.toFloat() / maxMinutes,
+-                    barColor = GoalsMint
+-                )
+-            }
+-            val percentLess = if (before > 0) (((before - after).toFloat() / before) * 100).roundToInt() else 0
+-            Text(
+-                text = "↓ $percentLess% less scrolling",
+-                fontFamily = Inter,
+-                fontWeight = FontWeight.SemiBold,
+-                fontSize = 12.5.sp,
+-                color = GoalsMintDark,
+-                modifier = Modifier.padding(top = 12.dp)
+-            )
+-        }
+-
+-        Box(
+-            modifier = Modifier
+-                .fillMaxWidth()
+-                .clip(RoundedCornerShape(16.dp))
+-                .background(GoalsMint)
+-                .padding(16.dp),
+-            contentAlignment = Alignment.Center
+-        ) {
+-            Text(
+-                text = "🔥 ${state.focusStreakDays}-day focus streak",
+-                fontFamily = Quicksand,
+-                fontWeight = FontWeight.Bold,
+-                fontSize = 15.sp,
+-                color = GoalsMintBannerText
+-            )
++            WeeklyActivityCalendar(dailyLog = state.dailyLog, goals = goals)
+         }
+     }
++    }
+ }
+ 
+ @Preview(showBackground = true)
+diff --git a/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/components/AddGoalDialog.kt b/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/components/AddGoalDialog.kt
+index 2e0d54f..0cb3f36 100644
+--- a/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/components/AddGoalDialog.kt
++++ b/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/components/AddGoalDialog.kt
+@@ -1,6 +1,7 @@
+ package com.julieasoreng.touchgrass.ui.goals.components
+ 
+ import androidx.compose.foundation.background
++import androidx.compose.foundation.border
+ import androidx.compose.foundation.clickable
+ import androidx.compose.foundation.layout.Arrangement
+ import androidx.compose.foundation.layout.Box
+@@ -26,19 +27,22 @@ import androidx.compose.ui.graphics.Color
+ import androidx.compose.ui.text.font.FontWeight
+ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.sp
++import com.julieasoreng.touchgrass.ui.goals.activityColorPalette
++import com.julieasoreng.touchgrass.ui.goals.activityIconOptions
+ import com.julieasoreng.touchgrass.ui.theme.GoalsPurple
++import com.julieasoreng.touchgrass.ui.theme.GoalsTextMuted
++import com.julieasoreng.touchgrass.ui.theme.GoalsTextPrimary
+ import com.julieasoreng.touchgrass.ui.theme.Quicksand
+ 
+-private val emojiOptions = listOf("📖", "🎸", "📚", "🎨", "🏃", "✍️", "🧘", "🎹")
+-
+ @OptIn(ExperimentalLayoutApi::class)
+ @Composable
+ fun AddGoalDialog(
+     onDismiss: () -> Unit,
+-    onConfirm: (name: String, emoji: String) -> Unit
++    onConfirm: (name: String, emoji: String, color: Color) -> Unit
+ ) {
+     var name by remember { mutableStateOf("") }
+-    var selectedEmoji by remember { mutableStateOf(emojiOptions.first()) }
++    var selectedEmoji by remember { mutableStateOf(activityIconOptions.first()) }
++    var selectedColor by remember { mutableStateOf(activityColorPalette.first()) }
+ 
+     AlertDialog(
+         onDismissRequest = onDismiss,
+@@ -52,17 +56,19 @@ fun AddGoalDialog(
+                     singleLine = true,
+                     modifier = Modifier.fillMaxWidth()
+                 )
++
++                Text("Icon", fontFamily = Quicksand, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = GoalsTextMuted)
+                 FlowRow(
+                     horizontalArrangement = Arrangement.spacedBy(8.dp),
+                     verticalArrangement = Arrangement.spacedBy(8.dp)
+                 ) {
+-                    emojiOptions.forEach { emoji ->
++                    activityIconOptions.forEach { emoji ->
+                         val selected = emoji == selectedEmoji
+                         Box(
+                             modifier = Modifier
+                                 .size(40.dp)
+                                 .clip(CircleShape)
+-                                .background(if (selected) GoalsPurple.copy(alpha = 0.2f) else Color.Transparent)
++                                .background(if (selected) selectedColor.copy(alpha = 0.35f) else Color.Transparent)
+                                 .clickable { selectedEmoji = emoji },
+                             contentAlignment = Alignment.Center
+                         ) {
+@@ -70,10 +76,28 @@ fun AddGoalDialog(
+                         }
+                     }
+                 }
++
++                Text("Color", fontFamily = Quicksand, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = GoalsTextMuted)
++                FlowRow(
++                    horizontalArrangement = Arrangement.spacedBy(8.dp),
++                    verticalArrangement = Arrangement.spacedBy(8.dp)
++                ) {
++                    activityColorPalette.forEach { color ->
++                        val selected = color == selectedColor
++                        Box(
++                            modifier = Modifier
++                                .size(32.dp)
++                                .clip(CircleShape)
++                                .background(color)
++                                .border(2.dp, if (selected) GoalsTextPrimary else Color.Transparent, CircleShape)
++                                .clickable { selectedColor = color }
++                        )
++                    }
++                }
+             }
+         },
+         confirmButton = {
+-            TextButton(onClick = { onConfirm(name, selectedEmoji) }, enabled = name.isNotBlank()) {
++            TextButton(onClick = { onConfirm(name, selectedEmoji, selectedColor) }, enabled = name.isNotBlank()) {
+                 Text("Add", fontWeight = FontWeight.Bold, color = GoalsPurple)
+             }
+         },
+diff --git a/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/components/HomeBottomBar.kt b/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/components/HomeBottomBar.kt
+new file mode 100644
+index 0000000..19dfc46
+--- /dev/null
++++ b/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/components/HomeBottomBar.kt
+@@ -0,0 +1,82 @@
++package com.julieasoreng.touchgrass.ui.goals.components
++
++import androidx.compose.foundation.clickable
++import androidx.compose.foundation.layout.Arrangement
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.Row
++import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.padding
++import androidx.compose.material3.MaterialTheme
++import androidx.compose.material3.Surface
++import androidx.compose.material3.Text
++import androidx.compose.runtime.Composable
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.unit.dp
++import androidx.compose.ui.unit.sp
++import com.julieasoreng.touchgrass.ui.theme.GoalsPurple
++import com.julieasoreng.touchgrass.ui.theme.GoalsTextMuted
++import com.julieasoreng.touchgrass.ui.theme.Inter
++
++enum class HomeTab { GOALS, SUMMARY }
++
++@Composable
++fun HomeBottomBar(
++    selectedTab: HomeTab,
++    onSelectGoals: () -> Unit,
++    onSelectSummary: () -> Unit,
++    modifier: Modifier = Modifier
++) {
++    Surface(
++        modifier = modifier.fillMaxWidth(),
++        color = MaterialTheme.colorScheme.surface,
++        shadowElevation = 10.dp
++    ) {
++        Row(
++            modifier = Modifier
++                .fillMaxWidth()
++                .padding(vertical = 10.dp),
++            horizontalArrangement = Arrangement.SpaceEvenly
++        ) {
++            BottomBarItem(
++                icon = "🏠",
++                label = "My Goals",
++                selected = selectedTab == HomeTab.GOALS,
++                onClick = onSelectGoals
++            )
++            BottomBarItem(
++                icon = "📅",
++                label = "This week",
++                selected = selectedTab == HomeTab.SUMMARY,
++                onClick = onSelectSummary
++            )
++        }
++    }
++}
++
++@Composable
++private fun BottomBarItem(
++    icon: String,
++    label: String,
++    selected: Boolean,
++    onClick: () -> Unit
++) {
++    val tint = if (selected) GoalsPurple else GoalsTextMuted
++    Column(
++        modifier = Modifier
++            .clickable(onClick = onClick)
++            .padding(horizontal = 24.dp, vertical = 4.dp),
++        horizontalAlignment = Alignment.CenterHorizontally,
++        verticalArrangement = Arrangement.spacedBy(2.dp)
++    ) {
++        Text(icon, fontSize = 20.sp)
++        Text(
++            text = label,
++            fontFamily = Inter,
++            fontSize = 11.sp,
++            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
++            color = tint
++        )
++    }
++}
+diff --git a/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/components/ScrollComparisonBar.kt b/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/components/ScrollComparisonBar.kt
+deleted file mode 100644
+index 04d3b9c..0000000
+--- a/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/components/ScrollComparisonBar.kt
++++ /dev/null
+@@ -1,72 +0,0 @@
+-package com.julieasoreng.touchgrass.ui.goals.components
+-
+-import androidx.compose.foundation.background
+-import androidx.compose.foundation.layout.Arrangement
+-import androidx.compose.foundation.layout.Box
+-import androidx.compose.foundation.layout.Row
+-import androidx.compose.foundation.layout.fillMaxHeight
+-import androidx.compose.foundation.layout.fillMaxWidth
+-import androidx.compose.foundation.layout.height
+-import androidx.compose.foundation.layout.width
+-import androidx.compose.foundation.shape.RoundedCornerShape
+-import androidx.compose.material3.Text
+-import androidx.compose.runtime.Composable
+-import androidx.compose.ui.Alignment
+-import androidx.compose.ui.Modifier
+-import androidx.compose.ui.draw.clip
+-import androidx.compose.ui.graphics.Color
+-import androidx.compose.ui.text.font.FontWeight
+-import androidx.compose.ui.text.style.TextAlign
+-import androidx.compose.ui.unit.dp
+-import androidx.compose.ui.unit.sp
+-import com.julieasoreng.touchgrass.ui.theme.GoalsNeutralTrack
+-import com.julieasoreng.touchgrass.ui.theme.GoalsTextMuted
+-import com.julieasoreng.touchgrass.ui.theme.GoalsTextPrimary
+-import com.julieasoreng.touchgrass.ui.theme.Inter
+-
+-@Composable
+-fun ScrollComparisonBar(
+-    label: String,
+-    valueLabel: String,
+-    fraction: Float,
+-    barColor: Color,
+-    modifier: Modifier = Modifier
+-) {
+-    Row(
+-        modifier = modifier.fillMaxWidth(),
+-        verticalAlignment = Alignment.CenterVertically,
+-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+-    ) {
+-        Text(
+-            text = label,
+-            fontFamily = Inter,
+-            fontSize = 12.sp,
+-            color = GoalsTextMuted,
+-            modifier = Modifier.width(56.dp)
+-        )
+-        Box(
+-            modifier = Modifier
+-                .weight(1f)
+-                .height(14.dp)
+-                .clip(RoundedCornerShape(7.dp))
+-                .background(GoalsNeutralTrack)
+-        ) {
+-            Box(
+-                modifier = Modifier
+-                    .fillMaxHeight()
+-                    .fillMaxWidth(fraction.coerceIn(0f, 1f))
+-                    .clip(RoundedCornerShape(7.dp))
+-                    .background(barColor)
+-            )
+-        }
+-        Text(
+-            text = valueLabel,
+-            fontFamily = Inter,
+-            fontWeight = FontWeight.SemiBold,
+-            fontSize = 12.sp,
+-            color = GoalsTextPrimary,
+-            textAlign = TextAlign.End,
+-            modifier = Modifier.width(52.dp)
+-        )
+-    }
+-}
+diff --git a/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/components/WeeklyActivityCalendar.kt b/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/components/WeeklyActivityCalendar.kt
+new file mode 100644
+index 0000000..6665ae2
+--- /dev/null
++++ b/app/src/main/java/com/julieasoreng/touchgrass/ui/goals/components/WeeklyActivityCalendar.kt
+@@ -0,0 +1,137 @@
++package com.julieasoreng.touchgrass.ui.goals.components
++
++import androidx.compose.foundation.background
++import androidx.compose.foundation.layout.Arrangement
++import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.ExperimentalLayoutApi
++import androidx.compose.foundation.layout.FlowRow
++import androidx.compose.foundation.layout.Row
++import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.height
++import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.layout.width
++import androidx.compose.foundation.shape.CircleShape
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.material3.Text
++import androidx.compose.runtime.Composable
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.draw.clip
++import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.text.style.TextAlign
++import androidx.compose.ui.unit.dp
++import androidx.compose.ui.unit.sp
++import com.julieasoreng.touchgrass.data.goals.Goal
++import com.julieasoreng.touchgrass.ui.goals.formatMinutes
++import com.julieasoreng.touchgrass.ui.theme.GoalsNeutralTrack
++import com.julieasoreng.touchgrass.ui.theme.GoalsTextMuted
++import com.julieasoreng.touchgrass.ui.theme.GoalsTextPrimary
++import com.julieasoreng.touchgrass.ui.theme.Inter
++import java.time.DayOfWeek
++import java.time.format.TextStyle
++import java.util.Locale
++
++private val orderedDays = listOf(
++    DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY,
++    DayOfWeek.FRIDAY, DayOfWeek.SATURDAY, DayOfWeek.SUNDAY
++)
++
++@OptIn(ExperimentalLayoutApi::class)
++@Composable
++fun WeeklyActivityCalendar(
++    dailyLog: Map<DayOfWeek, Map<String, Int>>,
++    goals: List<Goal>,
++    modifier: Modifier = Modifier
++) {
++    val dayTotals = orderedDays.associateWith { day -> dailyLog[day]?.values?.sum() ?: 0 }
++    val maxTotal = (dayTotals.values.maxOrNull() ?: 0).coerceAtLeast(1)
++
++    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
++        Row(
++            modifier = Modifier
++                .fillMaxWidth()
++                .height(150.dp),
++            horizontalArrangement = Arrangement.SpaceBetween,
++            verticalAlignment = Alignment.Bottom
++        ) {
++            orderedDays.forEach { day ->
++                val segments = dailyLog[day].orEmpty()
++                val total = dayTotals.getValue(day)
++                Column(
++                    modifier = Modifier.width(28.dp),
++                    horizontalAlignment = Alignment.CenterHorizontally,
++                    verticalArrangement = Arrangement.Bottom
++                ) {
++                    if (total > 0) {
++                        Text(
++                            text = formatMinutes(total),
++                            fontFamily = Inter,
++                            fontSize = 8.5.sp,
++                            color = GoalsTextMuted,
++                            textAlign = TextAlign.Center,
++                            modifier = Modifier.padding(bottom = 4.dp)
++                        )
++                    }
++                    Box(
++                        modifier = Modifier
++                            .width(18.dp)
++                            .height(84.dp * (total.toFloat() / maxTotal).coerceIn(0.05f, 1f))
++                            .clip(RoundedCornerShape(6.dp))
++                            .background(GoalsNeutralTrack)
++                    ) {
++                        if (total > 0) {
++                            Column(Modifier.fillMaxWidth()) {
++                                goals.filter { segments.containsKey(it.id) }.forEach { goal ->
++                                    val minutes = segments.getValue(goal.id)
++                                    Box(
++                                        modifier = Modifier
++                                            .fillMaxWidth()
++                                            .weight(minutes.toFloat())
++                                            .background(goal.color)
++                                    )
++                                }
++                            }
++                        }
++                    }
++                    Text(
++                        text = day.getDisplayName(TextStyle.SHORT, Locale.getDefault()).take(3),
++                        fontFamily = Inter,
++                        fontWeight = FontWeight.SemiBold,
++                        fontSize = 10.sp,
++                        color = GoalsTextPrimary.copy(alpha = 0.7f),
++                        modifier = Modifier.padding(top = 6.dp)
++                    )
++                }
++            }
++        }
++
++        if (goals.isNotEmpty()) {
++            FlowRow(
++                horizontalArrangement = Arrangement.spacedBy(12.dp),
++                verticalArrangement = Arrangement.spacedBy(6.dp)
++            ) {
++                goals.forEach { goal -> LegendEntry(goal) }
++            }
++        }
++    }
++}
++
++@Composable
++private fun LegendEntry(goal: Goal) {
++    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
++        Box(
++            modifier = Modifier
++                .width(8.dp)
++                .height(8.dp)
++                .clip(CircleShape)
++                .background(goal.color)
++        )
++        Text(
++            text = "${goal.emoji} ${goal.name}",
++            fontFamily = Inter,
++            fontSize = 11.sp,
++            color = GoalsTextPrimary.copy(alpha = 0.85f)
++        )
++    }
++}
+diff --git a/app/src/main/java/com/julieasoreng/touchgrass/ui/navigation/BloomNavHost.kt b/app/src/main/java/com/julieasoreng/touchgrass/ui/navigation/BloomNavHost.kt
+index ce0dadd..c050bc6 100644
+--- a/app/src/main/java/com/julieasoreng/touchgrass/ui/navigation/BloomNavHost.kt
++++ b/app/src/main/java/com/julieasoreng/touchgrass/ui/navigation/BloomNavHost.kt
+@@ -23,7 +23,8 @@ fun BloomNavHost(navController: NavHostController = rememberNavController()) {
+     NavHost(navController = navController, startDestination = NavRoutes.ONBOARDING) {
+         composable(NavRoutes.ONBOARDING) {
+             OnboardingScreen(
+-                onOnboardingComplete = {
++                onOnboardingComplete = { replacementActivities ->
++                    goalsViewModel.initializeGoals(replacementActivities)
+                     navController.navigate(NavRoutes.HOME) {
+                         popUpTo(NavRoutes.ONBOARDING) { inclusive = true }
+                     }
+diff --git a/app/src/main/java/com/julieasoreng/touchgrass/ui/onboarding/OnboardingScreen.kt b/app/src/main/java/com/julieasoreng/touchgrass/ui/onboarding/OnboardingScreen.kt
+index cf9055d..76f695d 100644
+--- a/app/src/main/java/com/julieasoreng/touchgrass/ui/onboarding/OnboardingScreen.kt
++++ b/app/src/main/java/com/julieasoreng/touchgrass/ui/onboarding/OnboardingScreen.kt
+@@ -105,7 +105,7 @@ private fun buildTranscript(state: OnboardingUiState): List<TranscriptItem> {
+ 
+ @Composable
+ fun OnboardingScreen(
+-    onOnboardingComplete: () -> Unit,
++    onOnboardingComplete: (List<String>) -> Unit,
+     modifier: Modifier = Modifier
+ ) {
+     val context = LocalContext.current
+@@ -115,7 +115,7 @@ fun OnboardingScreen(
+     val state by viewModel.uiState.collectAsState()
+ 
+     LaunchedEffect(Unit) {
+-        viewModel.navigateToHome.collect { onOnboardingComplete() }
++        viewModel.navigateToHome.collect { activities -> onOnboardingComplete(activities) }
+     }
+ 
+     val lifecycleOwner = LocalLifecycleOwner.current
+diff --git a/app/src/main/java/com/julieasoreng/touchgrass/ui/onboarding/OnboardingViewModel.kt b/app/src/main/java/com/julieasoreng/touchgrass/ui/onboarding/OnboardingViewModel.kt
+index 1d6a2c5..8bb8671 100644
+--- a/app/src/main/java/com/julieasoreng/touchgrass/ui/onboarding/OnboardingViewModel.kt
++++ b/app/src/main/java/com/julieasoreng/touchgrass/ui/onboarding/OnboardingViewModel.kt
+@@ -28,8 +28,8 @@ class OnboardingViewModel(
+     private val _uiState = MutableStateFlow(OnboardingUiState())
+     val uiState: StateFlow<OnboardingUiState> = _uiState.asStateFlow()
+ 
+-    private val _navigateToHome = Channel<Unit>(Channel.BUFFERED)
+-    val navigateToHome: Flow<Unit> = _navigateToHome.receiveAsFlow()
++    private val _navigateToHome = Channel<List<String>>(Channel.BUFFERED)
++    val navigateToHome: Flow<List<String>> = _navigateToHome.receiveAsFlow()
+ 
+     init {
+         refreshUsagePermission()
+@@ -153,7 +153,7 @@ class OnboardingViewModel(
+         _uiState.update { it.copy(answers = finalAnswers) }
+         viewModelScope.launch {
+             preferencesRepository.saveOnboardingAnswers(finalAnswers)
+-            _navigateToHome.send(Unit)
++            _navigateToHome.send(finalAnswers.replacementActivities)
+         }
+     }
+ 
+diff --git a/app/src/main/java/com/julieasoreng/touchgrass/ui/theme/Color.kt b/app/src/main/java/com/julieasoreng/touchgrass/ui/theme/Color.kt
+index 49af313..f63c548 100644
+--- a/app/src/main/java/com/julieasoreng/touchgrass/ui/theme/Color.kt
++++ b/app/src/main/java/com/julieasoreng/touchgrass/ui/theme/Color.kt
+@@ -27,3 +27,5 @@ val GoalsDarkTrack = Color(0xFF2A3A34)
+ val GoalsDarkBorder = Color(0xFF48594F)
+ val GoalsDarkMintText = Color(0xFFB7E4D3)
+ val GoalsDeleteBackground = Color(0xFFE08A7D)
++val GoalsSky = Color(0xFFA9C9E8)
++val GoalsButter = Color(0xFFEDD9A3)
+-- 
+2.43.0
+
