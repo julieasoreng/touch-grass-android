@@ -99,7 +99,8 @@ private fun buildTranscript(state: OnboardingUiState): List<TranscriptItem> {
             val label = if (preset != null) {
                 "${preset.label} (down ${preset.reductionPercent}%) — ~${formatDuration(targetMillis)} per day"
             } else {
-                "Custom goal — ${formatDuration(targetMillis)} per day"
+                val percentSuffix = state.answers.targetReductionPercent?.let { " (down $it%)" }.orEmpty()
+                "Custom goal$percentSuffix — ${formatDuration(targetMillis)} per day"
             }
             items += TranscriptItem.UserAnswer(label)
         }
@@ -283,7 +284,8 @@ private fun TranscriptItemContent(
                 CustomGoalInput(
                     value = state.customTargetInputText,
                     onValueChange = viewModel::updateCustomTargetInput,
-                    onConfirm = viewModel::confirmCustomTarget
+                    onConfirm = viewModel::confirmCustomTarget,
+                    baselineMillis = baselineMillis
                 )
             } else {
                 OptionButton(

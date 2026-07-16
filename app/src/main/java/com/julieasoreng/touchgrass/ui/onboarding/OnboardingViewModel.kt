@@ -83,7 +83,13 @@ class OnboardingViewModel(
     fun selectTargetPreset(preset: TargetPreset) {
         val baseline = _uiState.value.answers.dailyAverageScreenTimeMillis
         advanceSingleSelect(
-            applyAnswer = { it.copy(targetScreenTimeMillis = preset.targetMillis(baseline), targetPreset = preset) },
+            applyAnswer = {
+                it.copy(
+                    targetScreenTimeMillis = preset.targetMillis(baseline),
+                    targetPreset = preset,
+                    targetReductionPercent = preset.reductionPercent
+                )
+            },
             nextStep = OnboardingStep.SCROLL_TIMES
         )
     }
@@ -99,9 +105,18 @@ class OnboardingViewModel(
     fun confirmCustomTarget() {
         val minutes = _uiState.value.customTargetInputText.toIntOrNull() ?: return
         if (minutes <= 0) return
+        val targetMillis = minutes * 60_000L
+        val baselineMillis = _uiState.value.answers.dailyAverageScreenTimeMillis
+        val reductionPercent = (estimateTargetReduction(baselineMillis, targetMillis) as? TargetReductionEstimate.Reduction)?.percent
         _uiState.update { it.copy(isEnteringCustomTarget = false, customTargetInputText = "") }
         advanceSingleSelect(
-            applyAnswer = { it.copy(targetScreenTimeMillis = minutes * 60_000L, targetPreset = null) },
+            applyAnswer = {
+                it.copy(
+                    targetScreenTimeMillis = targetMillis,
+                    targetPreset = null,
+                    targetReductionPercent = reductionPercent
+                )
+            },
             nextStep = OnboardingStep.SCROLL_TIMES
         )
     }

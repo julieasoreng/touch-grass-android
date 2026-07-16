@@ -21,6 +21,7 @@ class OnboardingPreferencesRepository(private val context: Context) {
         val DAILY_AVERAGE_SCREEN_TIME_MILLIS = longPreferencesKey("daily_average_screen_time_millis")
         val SCREEN_TIME_DAYS_OF_DATA = intPreferencesKey("screen_time_days_of_data")
         val TARGET_SCREEN_TIME_MILLIS = longPreferencesKey("target_screen_time_millis")
+        val TARGET_REDUCTION_PERCENT = intPreferencesKey("target_reduction_percent")
         val SCROLL_TIME_PATTERN = stringPreferencesKey("scroll_time_pattern")
         val REPLACEMENT_ACTIVITIES = stringSetPreferencesKey("replacement_activities")
         val INTENTION_STATEMENT = stringPreferencesKey("intention_statement")
@@ -38,6 +39,7 @@ class OnboardingPreferencesRepository(private val context: Context) {
             prefs[Keys.DAILY_AVERAGE_SCREEN_TIME_MILLIS] = answers.dailyAverageScreenTimeMillis
             prefs[Keys.SCREEN_TIME_DAYS_OF_DATA] = answers.screenTimeDaysOfData
             answers.targetScreenTimeMillis?.let { prefs[Keys.TARGET_SCREEN_TIME_MILLIS] = it }
+            answers.targetReductionPercent?.let { prefs[Keys.TARGET_REDUCTION_PERCENT] = it }
             answers.scrollTimePattern?.let { prefs[Keys.SCROLL_TIME_PATTERN] = it.name }
             prefs[Keys.REPLACEMENT_ACTIVITIES] = answers.replacementActivities.toSet()
             prefs[Keys.INTENTION_STATEMENT] = answers.intentionStatement
