@@ -9,6 +9,7 @@ import android.os.IBinder
 import androidx.core.content.ContextCompat
 import com.julieasoreng.touchgrass.admin.TouchGrassDeviceAdminReceiver
 import com.julieasoreng.touchgrass.data.preferences.LockFeaturePreferencesRepository
+import com.julieasoreng.touchgrass.data.preferences.OnboardingPreferencesRepository
 import com.julieasoreng.touchgrass.notifications.LockNotifications
 import com.julieasoreng.touchgrass.usage.UsageStatsHelper
 import java.util.Calendar
@@ -24,6 +25,7 @@ import kotlinx.coroutines.launch
 class ScreenTimeMonitorService : Service() {
 
     private lateinit var repository: LockFeaturePreferencesRepository
+    private lateinit var onboardingPreferencesRepository: OnboardingPreferencesRepository
     private lateinit var devicePolicyManager: DevicePolicyManager
     private var serviceScope: CoroutineScope? = null
     private var userPresentReceiver: UserPresentReceiver? = null
@@ -31,6 +33,7 @@ class ScreenTimeMonitorService : Service() {
     override fun onCreate() {
         super.onCreate()
         repository = LockFeaturePreferencesRepository(applicationContext)
+        onboardingPreferencesRepository = OnboardingPreferencesRepository(applicationContext)
         devicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         LockNotifications.ensureChannels(this)
         registerUserPresentReceiver()
@@ -66,20 +69,36 @@ class ScreenTimeMonitorService : Service() {
         val state = repository.state.first()
         if (!state.isDeviceAdminActive) return
         // Only fire once per day: the intervention moment is the next unlock after crossing
-        // the limit, not a repeated re-lock every poll while already over budget.
+        // whichever limit tripped first, not a repeated re-lock every poll while already over budget.
         if (isSameDay(state.lastLockTimestamp, System.currentTimeMillis())) return
 
         val elapsedMinutes = UsageStatsHelper.screenTimeTodayMinutes(applicationContext)
         if (elapsedMinutes >= state.dailyLimitMinutes) {
-            lockDeviceAndFlagNotification(state.dailyLimitMinutes)
+            lockDeviceAndFlagNotification("You hit your ${state.dailyLimitMinutes} min daily screen time limit.")
+            return
+        }
+
+        checkSocialMediaTargetCrossed()
+    }
+
+    /** Fails safe if onboarding hasn't set a target yet (null/zero) rather than locking on a
+     *  phantom goal. */
+    private suspend fun checkSocialMediaTargetCrossed() {
+        val targetMillis = onboardingPreferencesRepository.targetScreenTimeMillis.first() ?: return
+        if (targetMillis <= 0L) return
+        val targetMinutes = (targetMillis / 60_000L).toInt()
+
+        val socialMinutes = UsageStatsHelper.socialMediaScreenTimeTodayMinutes(applicationContext)
+        if (socialMinutes >= targetMinutes) {
+            lockDeviceAndFlagNotification("You hit your $targetMinutes min daily social media goal.")
         }
     }
 
-    private suspend fun lockDeviceAndFlagNotification(dailyLimitMinutes: Int) {
+    private suspend fun lockDeviceAndFlagNotification(reasonText: String) {
         val adminComponent = TouchGrassDeviceAdminReceiver.componentName(applicationContext)
         if (!devicePolicyManager.isAdminActive(adminComponent)) return
         devicePolicyManager.lockNow()
-        repository.markLocked("You hit your $dailyLimitMinutes min daily screen time limit.")
+        repository.markLocked(reasonText)
     }
 
     private fun isSameDay(timestampA: Long, timestampB: Long): Boolean {

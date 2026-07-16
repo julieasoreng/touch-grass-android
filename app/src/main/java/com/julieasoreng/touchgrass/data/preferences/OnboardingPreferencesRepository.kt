@@ -53,6 +53,12 @@ class OnboardingPreferencesRepository(private val context: Context) {
         .map { prefs -> prefs[Keys.ONBOARDING_COMPLETE] ?: false }
         .distinctUntilChanged()
 
+    /** The user's chosen daily social-media target, in milliseconds — null if onboarding hasn't
+     *  set one yet, so callers can fail safe instead of comparing against a phantom zero target. */
+    val targetScreenTimeMillis: Flow<Long?> = context.dataStore.data
+        .map { prefs -> prefs[Keys.TARGET_SCREEN_TIME_MILLIS] }
+        .distinctUntilChanged()
+
     suspend fun saveOnboardingAnswers(answers: OnboardingAnswers) {
         context.dataStore.edit { prefs ->
             prefs[Keys.DAILY_AVERAGE_SCREEN_TIME_MILLIS] = answers.dailyAverageScreenTimeMillis

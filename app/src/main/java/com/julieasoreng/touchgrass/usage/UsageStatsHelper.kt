@@ -4,6 +4,7 @@ import android.app.AppOpsManager
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.os.Process
+import com.julieasoreng.touchgrass.data.usage.SOCIAL_MEDIA_PACKAGES
 import java.util.Calendar
 
 object UsageStatsHelper {
@@ -30,6 +31,20 @@ object UsageStatsHelper {
         val stats = usageStatsManager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, startTime, endTime)
         val totalForegroundMillis = stats.orEmpty().sumOf { it.totalTimeInForeground }
         return (totalForegroundMillis / 60_000L).toInt()
+    }
+
+    /** Same day-boundary and permission handling as [screenTimeTodayMinutes], filtered to the
+     *  same social media app list used for the onboarding baseline and scroll-time detection. */
+    fun socialMediaScreenTimeTodayMinutes(context: Context): Int {
+        if (!hasUsageAccess(context)) return 0
+        val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val endTime = System.currentTimeMillis()
+        val startTime = startOfTodayMillis()
+        val stats = usageStatsManager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, startTime, endTime)
+        val socialMillis = stats.orEmpty()
+            .filter { it.packageName in SOCIAL_MEDIA_PACKAGES }
+            .sumOf { it.totalTimeInForeground }
+        return (socialMillis / 60_000L).toInt()
     }
 
     private fun startOfTodayMillis(): Long {

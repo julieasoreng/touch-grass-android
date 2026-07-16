@@ -13,6 +13,17 @@ data class ScreenTimeBaseline(
     val daysOfData: Int
 )
 
+/** The filtered social media app list used everywhere this app measures "scrolling" time —
+ *  onboarding baseline, scroll-time pattern detection, and the daily-target monitor. */
+val SOCIAL_MEDIA_PACKAGES = setOf(
+    "com.instagram.android",
+    "com.zhiliaoapp.musically", // TikTok
+    "com.snapchat.android",
+    "com.google.android.youtube",
+    "com.facebook.katana",
+    "com.twitter.android" // X / Twitter
+)
+
 enum class ScrollTimePattern {
     MORNING,
     MIDDAY,
@@ -34,15 +45,6 @@ class ScreenTimeRepository(private val context: Context) {
         // How close a runner-up bucket needs to be to the leading bucket (as a fraction of the
         // leader's total) before we treat the result as "no dominant pattern" instead of forcing a winner.
         private const val DOMINANCE_MARGIN = 0.10
-
-        private val SOCIAL_MEDIA_PACKAGES = setOf(
-            "com.instagram.android",
-            "com.zhiliaoapp.musically", // TikTok
-            "com.snapchat.android",
-            "com.google.android.youtube",
-            "com.facebook.katana",
-            "com.twitter.android" // X / Twitter
-        )
     }
 
     fun hasUsageAccessPermission(): Boolean {
