@@ -28,7 +28,7 @@ fun IntentionExampleBubble(activityPhrase: String, modifier: Modifier = Modifier
     ) {
         Text(
             text = "If I feel the urge to scroll, I will $activityPhrase instead. " +
-                "I will tell a friend about this plan.",
+                "I will tell [name of friend] about this.",
             color = CharcoalText,
             fontStyle = FontStyle.Italic,
             style = MaterialTheme.typography.bodyMedium,
