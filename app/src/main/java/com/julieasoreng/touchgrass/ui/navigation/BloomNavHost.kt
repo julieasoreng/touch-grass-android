@@ -1,6 +1,8 @@
 package com.julieasoreng.touchgrass.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -18,7 +20,10 @@ import com.julieasoreng.touchgrass.ui.onboarding.OnboardingScreen
 
 @Composable
 fun BloomNavHost(navController: NavHostController = rememberNavController()) {
-    val goalsViewModel: GoalsViewModel = viewModel(factory = GoalsViewModelFactory())
+    val context = LocalContext.current
+    val goalsViewModel: GoalsViewModel = viewModel(
+        factory = remember { GoalsViewModelFactory(context.applicationContext) }
+    )
 
     NavHost(navController = navController, startDestination = NavRoutes.ONBOARDING) {
         composable(NavRoutes.ONBOARDING) {

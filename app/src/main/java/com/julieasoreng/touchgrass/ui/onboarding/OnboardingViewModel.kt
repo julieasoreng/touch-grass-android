@@ -151,7 +151,7 @@ class OnboardingViewModel(
     }
 
     fun addCustomActivity() {
-        val text = _uiState.value.customActivityText.trim()
+        val text = formatFreeTextActivity(_uiState.value.customActivityText)
         if (text.isEmpty()) return
         _uiState.update {
             it.copy(
@@ -198,6 +198,13 @@ class OnboardingViewModel(
         _uiState.update { it.copy(step = previous) }
         return true
     }
+}
+
+/** Cleans up free-text activity input once, at the point it enters the system, so every later
+ *  reader (My Goals, analytics, etc.) sees a consistently formatted value. */
+private fun formatFreeTextActivity(text: String): String {
+    val collapsed = text.trim().replace(Regex("\\s+"), " ")
+    return collapsed.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
 }
 
 class OnboardingViewModelFactory(context: Context) : ViewModelProvider.Factory {

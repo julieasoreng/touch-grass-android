@@ -11,6 +11,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.julieasoreng.touchgrass.data.usage.ScrollTimePattern
 import com.julieasoreng.touchgrass.ui.onboarding.OnboardingAnswers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "bloom_prefs")
@@ -33,6 +34,12 @@ class OnboardingPreferencesRepository(private val context: Context) {
     val scrollTimePattern: Flow<ScrollTimePattern?> = context.dataStore.data.map { prefs ->
         prefs[Keys.SCROLL_TIME_PATTERN]?.let { name -> runCatching { ScrollTimePattern.valueOf(name) }.getOrNull() }
     }
+
+    /** The replacement activities chosen during onboarding, already formatted — the single source
+     *  of truth for any screen (e.g. My Goals) that needs to show them. */
+    val replacementActivities: Flow<List<String>> = context.dataStore.data
+        .map { prefs -> prefs[Keys.REPLACEMENT_ACTIVITIES]?.toList().orEmpty() }
+        .distinctUntilChanged()
 
     suspend fun saveOnboardingAnswers(answers: OnboardingAnswers) {
         context.dataStore.edit { prefs ->

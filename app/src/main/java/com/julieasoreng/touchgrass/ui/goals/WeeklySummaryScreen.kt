@@ -23,10 +23,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.julieasoreng.touchgrass.data.preferences.OnboardingPreferencesRepository
 import com.julieasoreng.touchgrass.ui.goals.components.DonutChart
 import com.julieasoreng.touchgrass.ui.goals.components.DonutSlice
 import com.julieasoreng.touchgrass.ui.goals.components.ScrollComparisonBar
@@ -195,9 +197,10 @@ fun WeeklySummaryScreen(
 @Preview(showBackground = true)
 @Composable
 private fun WeeklySummaryScreenPreview() {
+    val context = LocalContext.current
     BloomTheme {
         WeeklySummaryScreen(
-            viewModel = remember { GoalsViewModel() },
+            viewModel = remember { GoalsViewModel(OnboardingPreferencesRepository(context.applicationContext)) },
             onBack = {}
         )
     }

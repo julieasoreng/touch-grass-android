@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -36,6 +37,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.julieasoreng.touchgrass.data.preferences.OnboardingPreferencesRepository
 import com.julieasoreng.touchgrass.ui.goals.components.AddGoalDialog
 import com.julieasoreng.touchgrass.ui.goals.components.GoalCard
 import com.julieasoreng.touchgrass.ui.goals.components.dashedBorder
@@ -109,6 +111,15 @@ fun MyGoalsScreen(
         )
 
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (state.goals.isEmpty()) {
+                Text(
+                    text = "No goals yet — add one below to get started.",
+                    fontFamily = Inter,
+                    fontSize = 14.sp,
+                    color = GoalsTextMuted
+                )
+            }
+
             state.goals.forEach { goal ->
                 key(goal.id) {
                     GoalCard(
@@ -187,9 +198,10 @@ fun MyGoalsScreen(
 @Preview(showBackground = true)
 @Composable
 private fun MyGoalsScreenPreview() {
+    val context = LocalContext.current
     BloomTheme {
         MyGoalsScreen(
-            viewModel = remember { GoalsViewModel() },
+            viewModel = remember { GoalsViewModel(OnboardingPreferencesRepository(context.applicationContext)) },
             onGoalSelected = {},
             onViewSummary = {}
         )

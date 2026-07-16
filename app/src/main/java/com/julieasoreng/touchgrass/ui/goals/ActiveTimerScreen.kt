@@ -25,11 +25,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.julieasoreng.touchgrass.data.preferences.OnboardingPreferencesRepository
 import com.julieasoreng.touchgrass.ui.goals.components.FocusProgressRing
 import com.julieasoreng.touchgrass.ui.theme.BloomTheme
 import com.julieasoreng.touchgrass.ui.theme.GoalsDarkBackground
@@ -149,9 +151,10 @@ fun ActiveTimerScreen(
 @Preview(showBackground = true)
 @Composable
 private fun ActiveTimerScreenPreview() {
+    val context = LocalContext.current
     BloomTheme {
         val viewModel = remember {
-            GoalsViewModel().apply { startSession("read", 25) }
+            GoalsViewModel(OnboardingPreferencesRepository(context.applicationContext)).apply { startSession("read", 25) }
         }
         ActiveTimerScreen(
             goalId = "read",

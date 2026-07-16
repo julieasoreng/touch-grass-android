@@ -1,9 +1,11 @@
 package com.julieasoreng.touchgrass.ui.goals
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.julieasoreng.touchgrass.data.goals.Goal
+import com.julieasoreng.touchgrass.data.preferences.OnboardingPreferencesRepository
 import com.julieasoreng.touchgrass.ui.theme.GoalsLavender
 import com.julieasoreng.touchgrass.ui.theme.GoalsMint
 import com.julieasoreng.touchgrass.ui.theme.GoalsPeach
@@ -21,21 +23,55 @@ import kotlinx.coroutines.launch
 
 private val goalColorPalette = listOf(GoalsMint, GoalsPeach, GoalsLavender)
 
-private val initialGoals = listOf(
-    Goal(id = "read", name = "Read", emoji = "📖", color = GoalsMint, weeklyMinutes = 260),
-    Goal(id = "guitar", name = "Play guitar", emoji = "🎸", color = GoalsPeach, weeklyMinutes = 65),
-    Goal(id = "study", name = "Study", emoji = "📚", color = GoalsLavender, weeklyMinutes = 160)
+private val knownActivityEmojis = mapOf(
+    "Reading" to "📖",
+    "Writing" to "✍️",
+    "Painting" to "🎨",
+    "Dancing" to "💃",
+    "Exercise" to "🏃",
+    "Journaling" to "📓"
 )
 
-class GoalsViewModel : ViewModel() {
+private fun emojiForActivity(name: String): String = knownActivityEmojis[name] ?: "🌱"
 
-    private val _uiState = MutableStateFlow(GoalsUiState(goals = initialGoals))
+private fun goalIdForActivity(name: String): String = "onboarding-" + name.lowercase().replace(Regex("\\s+"), "-")
+
+class GoalsViewModel(
+    private val onboardingPreferencesRepository: OnboardingPreferencesRepository
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(GoalsUiState())
     val uiState: StateFlow<GoalsUiState> = _uiState.asStateFlow()
 
     private val _sessionEnded = Channel<Unit>(Channel.BUFFERED)
     val sessionEnded: Flow<Unit> = _sessionEnded.receiveAsFlow()
 
     private var tickJob: Job? = null
+
+    init {
+        viewModelScope.launch {
+            onboardingPreferencesRepository.replacementActivities.collect { activities ->
+                _uiState.update { it.copy(goals = mergeGoalsFromActivities(it.goals, activities)) }
+            }
+        }
+    }
+
+    /** Rebuilds the goal list from the onboarding activities (the source of truth), but keeps the
+     *  existing Goal instance — and any weeklyMinutes already logged this session — for activities
+     *  that were already present, instead of resetting progress every time this re-emits. */
+    private fun mergeGoalsFromActivities(currentGoals: List<Goal>, activities: List<String>): List<Goal> {
+        val existingById = currentGoals.associateBy { it.id }
+        return activities.mapIndexed { index, name ->
+            val id = goalIdForActivity(name)
+            existingById[id] ?: Goal(
+                id = id,
+                name = name,
+                emoji = emojiForActivity(name),
+                color = goalColorPalette[index % goalColorPalette.size],
+                weeklyMinutes = 0
+            )
+        }
+    }
 
     fun addGoal(name: String, emoji: String) {
         val trimmed = name.trim()
@@ -106,9 +142,11 @@ class GoalsViewModel : ViewModel() {
     }
 }
 
-class GoalsViewModelFactory : ViewModelProvider.Factory {
+class GoalsViewModelFactory(context: Context) : ViewModelProvider.Factory {
+    private val onboardingPreferencesRepository = OnboardingPreferencesRepository(context.applicationContext)
+
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        return GoalsViewModel() as T
+        return GoalsViewModel(onboardingPreferencesRepository) as T
     }
 }

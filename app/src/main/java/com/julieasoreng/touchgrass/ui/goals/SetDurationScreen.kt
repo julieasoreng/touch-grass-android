@@ -28,11 +28,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.julieasoreng.touchgrass.data.preferences.OnboardingPreferencesRepository
 import com.julieasoreng.touchgrass.ui.theme.BloomTheme
 import com.julieasoreng.touchgrass.ui.theme.GoalsBackground
 import com.julieasoreng.touchgrass.ui.theme.GoalsPurple
@@ -199,10 +201,11 @@ private fun StepperButton(symbol: String, onClick: () -> Unit) {
 @Preview(showBackground = true)
 @Composable
 private fun SetDurationScreenPreview() {
+    val context = LocalContext.current
     BloomTheme {
         SetDurationScreen(
             goalId = "read",
-            viewModel = remember { GoalsViewModel() },
+            viewModel = remember { GoalsViewModel(OnboardingPreferencesRepository(context.applicationContext)) },
             onBack = {},
             onStartFocusing = {}
         )
