@@ -146,10 +146,29 @@ class OnboardingViewModel(
         }
     }
 
-    fun completeOnboarding() {
+    fun confirmReplacementSelection() {
         val state = _uiState.value
         if (state.selectedReplacementActivities.isEmpty()) return
-        val finalAnswers = state.answers.copy(replacementActivities = state.selectedReplacementActivities)
+        _uiState.update {
+            it.copy(
+                answers = it.answers.copy(replacementActivities = state.selectedReplacementActivities),
+                step = OnboardingStep.INTENTION
+            )
+        }
+    }
+
+    fun updateIntentionStatement(text: String) {
+        _uiState.update { it.copy(answers = it.answers.copy(intentionStatement = text)) }
+    }
+
+    fun completeOnboarding() {
+        val state = _uiState.value
+        val statement = state.answers.intentionStatement.trim()
+        if (statement.length < MIN_INTENTION_STATEMENT_LENGTH) return
+        val finalAnswers = state.answers.copy(
+            intentionStatement = statement,
+            intentionPrefilledActivity = state.answers.replacementActivities.firstOrNull().orEmpty()
+        )
         _uiState.update { it.copy(answers = finalAnswers) }
         viewModelScope.launch {
             preferencesRepository.saveOnboardingAnswers(finalAnswers)

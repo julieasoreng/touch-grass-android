@@ -7,8 +7,11 @@ enum class OnboardingStep {
     USAGE,
     TARGET,
     SCROLL_TIMES,
-    REPLACEMENT
+    REPLACEMENT,
+    INTENTION
 }
+
+const val MIN_INTENTION_STATEMENT_LENGTH = 20
 
 enum class TargetPreset(val label: String, val reductionPercent: Int) {
     A_LITTLE("A little", 10),
@@ -25,5 +28,7 @@ data class OnboardingAnswers(
     val targetPreset: TargetPreset? = null,
     val scrollTimePattern: ScrollTimePattern? = null,
     val scrollTimePatternDaysOfData: Int = 0,
-    val replacementActivities: List<String> = emptyList()
+    val replacementActivities: List<String> = emptyList(),
+    val intentionStatement: String = "",
+    val intentionPrefilledActivity: String = ""
 )

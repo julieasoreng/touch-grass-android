@@ -38,6 +38,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.julieasoreng.touchgrass.ui.onboarding.components.AssistantChatBubble
 import com.julieasoreng.touchgrass.ui.onboarding.components.CustomActivityInput
 import com.julieasoreng.touchgrass.ui.onboarding.components.CustomGoalInput
+import com.julieasoreng.touchgrass.ui.onboarding.components.IntentionExampleBubble
+import com.julieasoreng.touchgrass.ui.onboarding.components.IntentionStatementInput
 import com.julieasoreng.touchgrass.ui.onboarding.components.OnboardingBottomCta
 import com.julieasoreng.touchgrass.ui.onboarding.components.OptionButton
 import com.julieasoreng.touchgrass.ui.onboarding.components.ProgressPills
@@ -51,6 +53,18 @@ import com.julieasoreng.touchgrass.ui.theme.SageGreen
 
 private val replacementOptions = listOf("Reading", "Writing", "Painting", "Dancing", "Exercise", "Journaling")
 
+private val naturalActivityPhrases = mapOf(
+    "Reading" to "read a book",
+    "Writing" to "write",
+    "Painting" to "paint",
+    "Dancing" to "dance",
+    "Exercise" to "exercise",
+    "Journaling" to "journal"
+)
+
+private fun naturalPhraseFor(activityLabel: String): String =
+    naturalActivityPhrases[activityLabel] ?: activityLabel.lowercase()
+
 private sealed interface TranscriptItem {
     data class Assistant(val text: String) : TranscriptItem
     data class UserAnswer(val text: String) : TranscriptItem
@@ -58,6 +72,7 @@ private sealed interface TranscriptItem {
     data object TargetOptions : TranscriptItem
     data object ScrollPatternCard : TranscriptItem
     data object ReplacementChips : TranscriptItem
+    data object IntentionPrompt : TranscriptItem
 }
 
 private fun buildTranscript(state: OnboardingUiState): List<TranscriptItem> {
@@ -98,6 +113,11 @@ private fun buildTranscript(state: OnboardingUiState): List<TranscriptItem> {
     if (state.step.ordinal >= OnboardingStep.REPLACEMENT.ordinal) {
         items += TranscriptItem.Assistant("Last one — what would you like to be doing instead, when you'd normally be scrolling?")
         if (state.step == OnboardingStep.REPLACEMENT) items += TranscriptItem.ReplacementChips
+    }
+
+    if (state.step.ordinal >= OnboardingStep.INTENTION.ordinal) {
+        items += TranscriptItem.Assistant("Now let's make it concrete. Write your plan in your own words, like this:")
+        items += TranscriptItem.IntentionPrompt
     }
 
     return items
@@ -174,8 +194,14 @@ fun OnboardingScreen(
                     modifier = Modifier.padding(20.dp)
                 )
                 OnboardingStep.REPLACEMENT -> OnboardingBottomCta(
-                    text = "Let's start",
+                    text = "Continue",
                     enabled = state.selectedReplacementActivities.isNotEmpty(),
+                    onClick = viewModel::confirmReplacementSelection,
+                    modifier = Modifier.padding(20.dp)
+                )
+                OnboardingStep.INTENTION -> OnboardingBottomCta(
+                    text = "Continue",
+                    enabled = state.answers.intentionStatement.trim().length >= MIN_INTENTION_STATEMENT_LENGTH,
                     onClick = viewModel::completeOnboarding,
                     modifier = Modifier.padding(20.dp)
                 )
@@ -304,6 +330,20 @@ private fun TranscriptItemContent(
                 value = state.customActivityText,
                 onValueChange = viewModel::updateCustomActivityText,
                 onConfirm = viewModel::addCustomActivity
+            )
+        }
+
+        TranscriptItem.IntentionPrompt -> Column(
+            modifier = Modifier.padding(start = 40.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            val activityPhrase = state.answers.replacementActivities.firstOrNull()
+                ?.let { naturalPhraseFor(it) }
+                ?: "your chosen activity"
+            IntentionExampleBubble(activityPhrase = activityPhrase)
+            IntentionStatementInput(
+                value = state.answers.intentionStatement,
+                onValueChange = viewModel::updateIntentionStatement
             )
         }
     }

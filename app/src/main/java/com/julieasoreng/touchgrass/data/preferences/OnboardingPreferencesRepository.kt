@@ -23,6 +23,8 @@ class OnboardingPreferencesRepository(private val context: Context) {
         val TARGET_SCREEN_TIME_MILLIS = longPreferencesKey("target_screen_time_millis")
         val SCROLL_TIME_PATTERN = stringPreferencesKey("scroll_time_pattern")
         val REPLACEMENT_ACTIVITIES = stringSetPreferencesKey("replacement_activities")
+        val INTENTION_STATEMENT = stringPreferencesKey("intention_statement")
+        val INTENTION_PREFILLED_ACTIVITY = stringPreferencesKey("intention_prefilled_activity")
         val ONBOARDING_COMPLETE = booleanPreferencesKey("onboarding_complete")
     }
 
@@ -38,6 +40,8 @@ class OnboardingPreferencesRepository(private val context: Context) {
             answers.targetScreenTimeMillis?.let { prefs[Keys.TARGET_SCREEN_TIME_MILLIS] = it }
             answers.scrollTimePattern?.let { prefs[Keys.SCROLL_TIME_PATTERN] = it.name }
             prefs[Keys.REPLACEMENT_ACTIVITIES] = answers.replacementActivities.toSet()
+            prefs[Keys.INTENTION_STATEMENT] = answers.intentionStatement
+            prefs[Keys.INTENTION_PREFILLED_ACTIVITY] = answers.intentionPrefilledActivity
             prefs[Keys.ONBOARDING_COMPLETE] = true
         }
     }
