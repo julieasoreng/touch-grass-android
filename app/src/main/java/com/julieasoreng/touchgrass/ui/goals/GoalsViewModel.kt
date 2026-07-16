@@ -7,8 +7,8 @@ import androidx.lifecycle.viewModelScope
 import com.julieasoreng.touchgrass.data.goals.CompletedSession
 import com.julieasoreng.touchgrass.data.goals.CompletedSessionsRepository
 import com.julieasoreng.touchgrass.data.goals.Goal
-import com.julieasoreng.touchgrass.data.goals.currentFocusStreakDays
 import com.julieasoreng.touchgrass.data.goals.sessionsWithinCurrentWeek
+import com.julieasoreng.touchgrass.data.goals.weeklyCalendar
 import com.julieasoreng.touchgrass.data.preferences.OnboardingPreferencesRepository
 import com.julieasoreng.touchgrass.data.usage.ScreenTimeRepository
 import com.julieasoreng.touchgrass.ui.theme.GoalsLavender
@@ -72,7 +72,7 @@ class GoalsViewModel(
                         val goalsWithIdentity = applyOnboardingActivities(state.goals, activities)
                         state.copy(
                             goals = applyWeeklyMinutes(goalsWithIdentity, sessionsWithinCurrentWeek(sessions)),
-                            focusStreakDays = currentFocusStreakDays(sessions)
+                            weeklyCalendar = weeklyCalendar(sessions)
                         )
                     }
                 }
@@ -108,15 +108,16 @@ class GoalsViewModel(
     /** One-time "before" (onboarding baseline) vs. "after" (freshly measured) scroll-time comparison. */
     private suspend fun loadScrollComparison() {
         val beforeMillis = onboardingPreferencesRepository.dailyAverageScreenTimeMillis.first()
-        val afterMillis = if (screenTimeRepository.hasUsageAccessPermission()) {
-            withContext(Dispatchers.IO) { screenTimeRepository.getSocialMediaBaseline().dailyAverageMillis }
+        val afterBaseline = if (screenTimeRepository.hasUsageAccessPermission()) {
+            withContext(Dispatchers.IO) { screenTimeRepository.getSocialMediaBaseline() }
         } else {
-            0L
+            null
         }
         _uiState.update {
             it.copy(
                 dailyScrollBeforeMinutes = (beforeMillis / 60_000L).toInt(),
-                dailyScrollThisWeekMinutes = (afterMillis / 60_000L).toInt()
+                dailyScrollAfterMinutes = ((afterBaseline?.dailyAverageMillis ?: 0L) / 60_000L).toInt(),
+                scrollAfterDaysOfData = afterBaseline?.daysOfData ?: 0
             )
         }
     }

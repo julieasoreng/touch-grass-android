@@ -30,18 +30,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.julieasoreng.touchgrass.ui.goals.components.DonutChart
 import com.julieasoreng.touchgrass.ui.goals.components.DonutSlice
-import com.julieasoreng.touchgrass.ui.goals.components.ScrollComparisonBar
+import com.julieasoreng.touchgrass.ui.goals.components.WeeklyActivityCalendar
 import com.julieasoreng.touchgrass.ui.theme.BloomTheme
 import com.julieasoreng.touchgrass.ui.theme.GoalsBackground
-import com.julieasoreng.touchgrass.ui.theme.GoalsDustyRose
-import com.julieasoreng.touchgrass.ui.theme.GoalsMint
 import com.julieasoreng.touchgrass.ui.theme.GoalsMintDark
-import com.julieasoreng.touchgrass.ui.theme.GoalsMintBannerText
 import com.julieasoreng.touchgrass.ui.theme.GoalsTextMuted
 import com.julieasoreng.touchgrass.ui.theme.GoalsTextPrimary
 import com.julieasoreng.touchgrass.ui.theme.Inter
 import com.julieasoreng.touchgrass.ui.theme.Quicksand
 import kotlin.math.roundToInt
+
+private const val MIN_DAYS_FOR_AFTER_COMPARISON = 4
 
 @Composable
 fun WeeklySummaryScreen(
@@ -147,48 +146,66 @@ fun WeeklySummaryScreen(
                 modifier = Modifier.padding(bottom = 14.dp)
             )
             val before = state.dailyScrollBeforeMinutes
-            val after = state.dailyScrollThisWeekMinutes
-            val maxMinutes = before.coerceAtLeast(after).coerceAtLeast(1)
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                ScrollComparisonBar(
-                    label = "Before",
-                    valueLabel = formatMinutes(before),
-                    fraction = before.toFloat() / maxMinutes,
-                    barColor = GoalsDustyRose
+            val after = state.dailyScrollAfterMinutes
+            if (before <= 0 || state.scrollAfterDaysOfData < MIN_DAYS_FOR_AFTER_COMPARISON) {
+                Text(
+                    text = "Check back in a few days to see your progress.",
+                    fontFamily = Inter,
+                    fontSize = 13.sp,
+                    color = GoalsTextMuted
                 )
-                ScrollComparisonBar(
-                    label = "This week",
-                    valueLabel = formatMinutes(after),
-                    fraction = after.toFloat() / maxMinutes,
-                    barColor = GoalsMint
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column {
+                        Text("Before", fontFamily = Inter, fontSize = 12.sp, color = GoalsTextMuted)
+                        Text(
+                            text = "${formatMinutes(before)}/day",
+                            fontFamily = Quicksand,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = GoalsTextPrimary
+                        )
+                    }
+                    Text("→", fontSize = 20.sp, color = GoalsTextMuted)
+                    Column {
+                        Text("Now", fontFamily = Inter, fontSize = 12.sp, color = GoalsTextMuted)
+                        Text(
+                            text = "${formatMinutes(after)}/day",
+                            fontFamily = Quicksand,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = if (after < before) GoalsMintDark else GoalsTextPrimary
+                        )
+                    }
+                }
+                val percentLess = (((before - after).toFloat() / before) * 100).roundToInt()
+                Text(
+                    text = if (after < before) "↓ $percentLess% less scrolling" else "Scroll time hasn't dropped yet — keep going.",
+                    fontFamily = Inter,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 12.5.sp,
+                    color = if (after < before) GoalsMintDark else GoalsTextMuted,
+                    modifier = Modifier.padding(top = 12.dp)
                 )
             }
-            val percentLess = if (before > 0) (((before - after).toFloat() / before) * 100).roundToInt() else 0
-            Text(
-                text = "↓ $percentLess% less scrolling",
-                fontFamily = Inter,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 12.5.sp,
-                color = GoalsMintDark,
-                modifier = Modifier.padding(top = 12.dp)
-            )
         }
 
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(GoalsMint)
-                .padding(16.dp),
-            contentAlignment = Alignment.Center
+                .clip(RoundedCornerShape(20.dp))
+                .background(Color.White)
+                .padding(vertical = 18.dp, horizontal = 20.dp)
         ) {
             Text(
-                text = "🔥 ${state.focusStreakDays}-day focus streak",
+                text = "Your week, activity by activity",
                 fontFamily = Quicksand,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp,
-                color = GoalsMintBannerText
+                color = GoalsTextPrimary,
+                modifier = Modifier.padding(bottom = 16.dp)
             )
+            WeeklyActivityCalendar(days = state.weeklyCalendar, goals = goals)
         }
     }
 }

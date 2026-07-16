@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Calendar
 import kotlinx.coroutines.flow.Flow
@@ -60,20 +61,29 @@ fun sessionsWithinCurrentWeek(
     return sessions.filter { it.completedAtEpochMillis >= weekStart }
 }
 
-/** Counts consecutive calendar days, ending today, that have at least one completed session. */
-fun currentFocusStreakDays(
+data class DayActivityMinutes(val goalId: String, val minutes: Int)
+
+data class CalendarDay(val date: LocalDate, val activityMinutes: List<DayActivityMinutes>)
+
+/** Buckets this week's sessions (Monday–Sunday) into one entry per day, each broken down by goal,
+ *  for the weekly activity calendar. */
+fun weeklyCalendar(
     sessions: List<CompletedSession>,
     nowEpochMillis: Long = System.currentTimeMillis()
-): Int {
+): List<CalendarDay> {
     val zone = ZoneId.systemDefault()
-    val sessionDays = sessions.map { Instant.ofEpochMilli(it.completedAtEpochMillis).atZone(zone).toLocalDate() }.toSet()
-    var streak = 0
-    var day = Instant.ofEpochMilli(nowEpochMillis).atZone(zone).toLocalDate()
-    while (day in sessionDays) {
-        streak++
-        day = day.minusDays(1)
+    val weekStart = Instant.ofEpochMilli(startOfWeekEpochMillis(nowEpochMillis)).atZone(zone).toLocalDate()
+    val sessionsByDate = sessions.groupBy { Instant.ofEpochMilli(it.completedAtEpochMillis).atZone(zone).toLocalDate() }
+    return (0..6).map { offset ->
+        val date = weekStart.plusDays(offset.toLong())
+        val minutesByGoal = sessionsByDate[date].orEmpty()
+            .groupBy { it.goalId }
+            .mapValues { (_, daySessions) -> daySessions.sumOf { it.minutes } }
+        CalendarDay(
+            date = date,
+            activityMinutes = minutesByGoal.map { (goalId, minutes) -> DayActivityMinutes(goalId, minutes) }
+        )
     }
-    return streak
 }
 
 private fun startOfWeekEpochMillis(nowEpochMillis: Long): Long {
