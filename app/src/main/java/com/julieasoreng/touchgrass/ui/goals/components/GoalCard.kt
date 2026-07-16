@@ -49,7 +49,10 @@ fun GoalCard(
 
     SwipeToDismissBox(
         state = dismissState,
-        modifier = modifier,
+        // Clipping the box as a whole (rather than relying on the background/content each
+        // clipping themselves) prevents a stray sliver of the delete-reveal background from
+        // showing past the rounded corners when the swipe offset isn't settled at exactly zero.
+        modifier = modifier.clip(RoundedCornerShape(18.dp)),
         enableDismissFromStartToEnd = false,
         backgroundContent = { GoalCardDeleteBackground() }
     ) {
