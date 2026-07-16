@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -42,9 +42,14 @@ private val barHeight = 88.dp
 fun WeeklyActivityCalendar(
     days: List<CalendarDay>,
     goals: List<Goal>,
+    dailyTargetMinutes: Int,
     modifier: Modifier = Modifier
 ) {
     val goalsById = goals.associateBy { it.id }
+    val dayTotals = days.map { day -> day.activityMinutes.sumOf { it.minutes } }
+    // Onboarding validation should always give us a positive target, but fall back to this week's
+    // own busiest day rather than dividing by zero if one somehow isn't set yet.
+    val effectiveTarget = if (dailyTargetMinutes > 0) dailyTargetMinutes else (dayTotals.maxOrNull() ?: 0)
 
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(
@@ -52,17 +57,24 @@ fun WeeklyActivityCalendar(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             days.forEachIndexed { index, day ->
-                val totalMinutes = day.activityMinutes.sumOf { it.minutes }
+                val totalMinutes = dayTotals[index]
+                val dayFraction = if (effectiveTarget > 0) (totalMinutes.toFloat() / effectiveTarget).coerceIn(0f, 1f) else 0f
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(
                         modifier = Modifier
                             .width(18.dp)
                             .height(barHeight)
                             .clip(RoundedCornerShape(6.dp))
-                            .background(GoalsNeutralTrack)
+                            .background(GoalsNeutralTrack),
+                        contentAlignment = Alignment.BottomCenter
                     ) {
                         if (totalMinutes > 0) {
-                            Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Bottom) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .fillMaxHeight(dayFraction),
+                                verticalArrangement = Arrangement.Bottom
+                            ) {
                                 day.activityMinutes.sortedByDescending { it.minutes }.forEach { activity ->
                                     val goal = goalsById[activity.goalId]
                                     val fraction = (activity.minutes.toFloat() / totalMinutes).coerceIn(0f, 1f)

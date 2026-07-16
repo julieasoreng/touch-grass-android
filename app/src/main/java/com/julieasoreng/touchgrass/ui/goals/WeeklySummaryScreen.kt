@@ -205,7 +205,7 @@ fun WeeklySummaryScreen(
                 color = GoalsTextPrimary,
                 modifier = Modifier.padding(bottom = 16.dp)
             )
-            WeeklyActivityCalendar(days = state.weeklyCalendar, goals = goals)
+            WeeklyActivityCalendar(days = state.weeklyCalendar, goals = goals, dailyTargetMinutes = state.dailyTargetMinutes)
         }
     }
 }

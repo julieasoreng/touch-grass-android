@@ -91,9 +91,12 @@ class GoalsViewModel(
         return goals.map { goal -> goal.copy(weeklyMinutes = minutesByGoalId[goal.id] ?: 0) }
     }
 
-    /** One-time "before" (onboarding baseline) vs. "after" (freshly measured) scroll-time comparison. */
+    /** One-time "before" (onboarding baseline) vs. "after" (freshly measured) scroll-time comparison,
+     *  plus the onboarding-set daily target — the same value the weekly activity chart scales its
+     *  bars against. */
     private suspend fun loadScrollComparison() {
         val beforeMillis = onboardingPreferencesRepository.dailyAverageScreenTimeMillis.first()
+        val targetMillis = onboardingPreferencesRepository.targetScreenTimeMillis.first() ?: 0L
         val afterBaseline = if (screenTimeRepository.hasUsageAccessPermission()) {
             withContext(Dispatchers.IO) { screenTimeRepository.getSocialMediaBaseline() }
         } else {
@@ -103,7 +106,8 @@ class GoalsViewModel(
             it.copy(
                 dailyScrollBeforeMinutes = (beforeMillis / 60_000L).toInt(),
                 dailyScrollAfterMinutes = ((afterBaseline?.dailyAverageMillis ?: 0L) / 60_000L).toInt(),
-                scrollAfterDaysOfData = afterBaseline?.daysOfData ?: 0
+                scrollAfterDaysOfData = afterBaseline?.daysOfData ?: 0,
+                dailyTargetMinutes = (targetMillis / 60_000L).toInt()
             )
         }
     }
