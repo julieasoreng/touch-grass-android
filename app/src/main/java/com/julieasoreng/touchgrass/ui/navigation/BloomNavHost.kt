@@ -79,6 +79,17 @@ fun BloomNavHost(
         }
     }
 
+    // A focus session survived a process death (see ActiveFocusSessionRepository) — jump straight
+    // back into the timer instead of leaving the resumed countdown running invisibly behind the
+    // goals list.
+    LaunchedEffect(Unit) {
+        goalsViewModel.resumedSession.collect { session ->
+            navController.navigate(NavRoutes.activeTimer(session.goal.id, session.targetSeconds / 60)) {
+                launchSingleTop = true
+            }
+        }
+    }
+
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route
 

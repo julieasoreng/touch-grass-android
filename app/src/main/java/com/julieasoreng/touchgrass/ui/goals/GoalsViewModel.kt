@@ -6,11 +6,13 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.julieasoreng.touchgrass.data.goals.ActiveFocusSessionRepository
 import com.julieasoreng.touchgrass.data.goals.ActivityIcon
 import com.julieasoreng.touchgrass.data.goals.CompletedSession
 import com.julieasoreng.touchgrass.data.goals.CompletedSessionsRepository
 import com.julieasoreng.touchgrass.data.goals.Goal
 import com.julieasoreng.touchgrass.data.goals.GoalsRepository
+import com.julieasoreng.touchgrass.data.goals.PersistedActiveSession
 import com.julieasoreng.touchgrass.data.goals.PersistedGoal
 import com.julieasoreng.touchgrass.data.goals.sessionsWithinCurrentWeek
 import com.julieasoreng.touchgrass.data.goals.weeklyCalendar
@@ -43,7 +45,8 @@ class GoalsViewModel(
     private val onboardingPreferencesRepository: OnboardingPreferencesRepository,
     private val completedSessionsRepository: CompletedSessionsRepository,
     private val screenTimeRepository: ScreenTimeRepository,
-    private val goalsRepository: GoalsRepository
+    private val goalsRepository: GoalsRepository,
+    private val activeFocusSessionRepository: ActiveFocusSessionRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(GoalsUiState())
@@ -51,6 +54,12 @@ class GoalsViewModel(
 
     private val _sessionEnded = Channel<Unit>(Channel.BUFFERED)
     val sessionEnded: Flow<Unit> = _sessionEnded.receiveAsFlow()
+
+    /** Fires once, only when a session is recovered from disk after the process was killed
+     *  mid-countdown — lets the nav host jump straight back into [ActiveTimerScreen] instead of
+     *  leaving the resumed countdown running invisibly behind the goals list. */
+    private val _resumedSession = Channel<ActiveSession>(Channel.BUFFERED)
+    val resumedSession: Flow<ActiveSession> = _resumedSession.receiveAsFlow()
 
     private var tickJob: Job? = null
 
@@ -82,6 +91,23 @@ class GoalsViewModel(
                 }
         }
         viewModelScope.launch { loadScrollComparison() }
+        resumePersistedSessionIfAny()
+    }
+
+    /** Runs once per (re)launch. If the process died mid-countdown, [ActiveFocusSessionRepository]
+     *  still has the session's start time and target on disk — recompute where it should be from
+     *  wall-clock elapsed time rather than trusting any in-memory state, which is gone. */
+    private fun resumePersistedSessionIfAny() {
+        viewModelScope.launch {
+            val persisted = activeFocusSessionRepository.active.first() ?: return@launch
+            val goal = goalsRepository.goals.first().map { it.toGoal() }.find { it.id == persisted.goalId }
+            if (goal == null) {
+                activeFocusSessionRepository.clear()
+                return@launch
+            }
+            val resumed = resumeSession(goal, persisted) ?: return@launch
+            _resumedSession.send(resumed)
+        }
     }
 
     /** Recomputes every goal's weeklyMinutes from this week's logged sessions — the single source
@@ -124,13 +150,53 @@ class GoalsViewModel(
         viewModelScope.launch { goalsRepository.removeGoal(goalId) }
     }
 
+    /** Called both by a genuine fresh start and by [ActiveTimerScreen] remounting after the process
+     *  was recreated (e.g. the nav back stack restoring the timer route) — if a persisted session
+     *  already exists for this exact goal, that must be the latter, so resume it instead of
+     *  clobbering real elapsed progress with a brand-new full-duration countdown. */
     fun startSession(goalId: String, minutes: Int) {
+        if (_uiState.value.activeSession?.goal?.id == goalId && tickJob?.isActive == true) return
         val goal = _uiState.value.goals.find { it.id == goalId } ?: return
+        viewModelScope.launch {
+            val persisted = activeFocusSessionRepository.active.first()
+            if (persisted != null && persisted.goalId == goalId) {
+                resumeSession(goal, persisted)
+            } else {
+                beginFreshSession(goal, minutes)
+            }
+        }
+    }
+
+    private fun beginFreshSession(goal: Goal, minutes: Int) {
         tickJob?.cancel()
         val targetSeconds = minutes * 60
+        val startEpochMillis = System.currentTimeMillis()
         _uiState.update {
             it.copy(activeSession = ActiveSession(goal = goal, targetSeconds = targetSeconds, remainingSeconds = targetSeconds))
         }
+        viewModelScope.launch { activeFocusSessionRepository.save(goal.id, targetSeconds, startEpochMillis) }
+        runTicker()
+    }
+
+    /** Recomputes remaining time from wall-clock elapsed time since [PersistedActiveSession.startEpochMillis]
+     *  rather than any in-memory counter. If enough real time has passed that the session would
+     *  already be over, credits the full duration immediately instead of resuming a countdown
+     *  that's already in the past. Returns the resumed session, or null if it completed instead. */
+    private fun resumeSession(goal: Goal, persisted: PersistedActiveSession): ActiveSession? {
+        tickJob?.cancel()
+        val elapsedSeconds = ((System.currentTimeMillis() - persisted.startEpochMillis) / 1000L).toInt()
+        val remaining = persisted.targetSeconds - elapsedSeconds
+        if (remaining <= 0) {
+            completeSession(ActiveSession(goal = goal, targetSeconds = persisted.targetSeconds, remainingSeconds = 0))
+            return null
+        }
+        val session = ActiveSession(goal = goal, targetSeconds = persisted.targetSeconds, remainingSeconds = remaining)
+        _uiState.update { it.copy(activeSession = session) }
+        runTicker()
+        return session
+    }
+
+    private fun runTicker() {
         tickJob = viewModelScope.launch {
             while (true) {
                 delay(1000)
@@ -152,13 +218,19 @@ class GoalsViewModel(
         val elapsedSeconds = current.targetSeconds - current.remainingSeconds
         logReplacedMinutes(current.goal.id, elapsedSeconds / 60)
         _uiState.update { it.copy(activeSession = null) }
-        viewModelScope.launch { _sessionEnded.send(Unit) }
+        viewModelScope.launch {
+            activeFocusSessionRepository.clear()
+            _sessionEnded.send(Unit)
+        }
     }
 
     private fun completeSession(session: ActiveSession) {
         logReplacedMinutes(session.goal.id, session.targetSeconds / 60)
         _uiState.update { it.copy(activeSession = null) }
-        viewModelScope.launch { _sessionEnded.send(Unit) }
+        viewModelScope.launch {
+            activeFocusSessionRepository.clear()
+            _sessionEnded.send(Unit)
+        }
     }
 
     private fun logReplacedMinutes(goalId: String, minutes: Int) {
@@ -175,9 +247,16 @@ class GoalsViewModelFactory(context: Context) : ViewModelProvider.Factory {
     private val completedSessionsRepository = CompletedSessionsRepository(context.applicationContext)
     private val screenTimeRepository = ScreenTimeRepository(context.applicationContext)
     private val goalsRepository = GoalsRepository(context.applicationContext)
+    private val activeFocusSessionRepository = ActiveFocusSessionRepository(context.applicationContext)
 
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        return GoalsViewModel(onboardingPreferencesRepository, completedSessionsRepository, screenTimeRepository, goalsRepository) as T
+        return GoalsViewModel(
+            onboardingPreferencesRepository,
+            completedSessionsRepository,
+            screenTimeRepository,
+            goalsRepository,
+            activeFocusSessionRepository
+        ) as T
     }
 }
