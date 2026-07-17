@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.IBinder
+import android.util.Log
 import androidx.core.content.ContextCompat
 import com.julieasoreng.touchgrass.admin.TouchGrassDeviceAdminReceiver
 import com.julieasoreng.touchgrass.data.preferences.LockFeaturePreferencesRepository
@@ -32,6 +33,7 @@ class ScreenTimeMonitorService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.i(TAG, "onCreate")
         repository = LockFeaturePreferencesRepository(applicationContext)
         onboardingPreferencesRepository = OnboardingPreferencesRepository(applicationContext)
         devicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
@@ -40,6 +42,7 @@ class ScreenTimeMonitorService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.i(TAG, "onStartCommand (intent=$intent)")
         startForeground(LockNotifications.MONITORING_NOTIFICATION_ID, LockNotifications.monitoringNotification(this))
         startMonitoringLoop()
         return START_STICKY
@@ -48,6 +51,7 @@ class ScreenTimeMonitorService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        Log.w(TAG, "onDestroy — monitoring loop stops here until something restarts this service")
         serviceScope?.cancel()
         userPresentReceiver?.let { unregisterReceiver(it) }
         super.onDestroy()
@@ -70,12 +74,19 @@ class ScreenTimeMonitorService : Service() {
 
     private suspend fun checkUsageAgainstLimit() {
         val state = repository.state.first()
-        if (!state.isDeviceAdminActive) return
+        if (!state.isDeviceAdminActive) {
+            Log.d(TAG, "Poll: device admin not active, skipping check")
+            return
+        }
         // Only fire once per day: the intervention moment is the next unlock after crossing
         // whichever limit tripped first, not a repeated re-lock every poll while already over budget.
-        if (isSameDay(state.lastLockTimestamp, System.currentTimeMillis())) return
+        if (isSameDay(state.lastLockTimestamp, System.currentTimeMillis())) {
+            Log.d(TAG, "Poll: already locked today (lastLockTimestamp=${state.lastLockTimestamp}), skipping check")
+            return
+        }
 
         val elapsedMinutes = UsageStatsHelper.screenTimeTodayMinutes(applicationContext)
+        Log.d(TAG, "Poll: screenTime=${elapsedMinutes}min vs dailyLimit=${state.dailyLimitMinutes}min")
         if (elapsedMinutes >= state.dailyLimitMinutes) {
             lockDeviceAndFlagNotification("You hit your ${state.dailyLimitMinutes} min daily screen time limit.")
             return
@@ -87,11 +98,15 @@ class ScreenTimeMonitorService : Service() {
     /** Fails safe if onboarding hasn't set a target yet (null/zero) rather than locking on a
      *  phantom goal. */
     private suspend fun checkSocialMediaTargetCrossed() {
-        val targetMillis = onboardingPreferencesRepository.targetScreenTimeMillis.first() ?: return
-        if (targetMillis <= 0L) return
+        val targetMillis = onboardingPreferencesRepository.targetScreenTimeMillis.first()
+        if (targetMillis == null || targetMillis <= 0L) {
+            Log.d(TAG, "Poll: no onboarding target set yet (targetMillis=$targetMillis), skipping social check")
+            return
+        }
         val targetMinutes = (targetMillis / 60_000L).toInt()
 
         val socialMinutes = UsageStatsHelper.socialMediaScreenTimeTodayMinutes(applicationContext)
+        Log.d(TAG, "Poll: socialMedia=${socialMinutes}min vs target=${targetMinutes}min")
         if (socialMinutes >= targetMinutes) {
             lockDeviceAndFlagNotification("You hit your $targetMinutes min daily social media goal.")
         }
@@ -99,7 +114,11 @@ class ScreenTimeMonitorService : Service() {
 
     private suspend fun lockDeviceAndFlagNotification(reasonText: String) {
         val adminComponent = TouchGrassDeviceAdminReceiver.componentName(applicationContext)
-        if (!devicePolicyManager.isAdminActive(adminComponent)) return
+        if (!devicePolicyManager.isAdminActive(adminComponent)) {
+            Log.w(TAG, "Threshold crossed but DevicePolicyManager reports admin inactive, not locking: $reasonText")
+            return
+        }
+        Log.i(TAG, "Locking device: $reasonText")
         devicePolicyManager.lockNow()
         repository.markLocked(reasonText)
     }
@@ -124,6 +143,7 @@ class ScreenTimeMonitorService : Service() {
     }
 
     companion object {
+        private const val TAG = "ScreenTimeMonitor"
         private const val MONITOR_INTERVAL_MS = 60_000L
 
         fun start(context: Context) {
