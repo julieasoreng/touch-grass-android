@@ -9,6 +9,7 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,7 +18,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -25,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -35,6 +40,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -51,6 +57,10 @@ import com.julieasoreng.touchgrass.ui.theme.Inter
 import com.julieasoreng.touchgrass.ui.theme.Quicksand
 
 private val dailyLimitOptions = listOf(30, 60, 90, 120)
+private const val CUSTOM_LIMIT_STEP_MINUTES = 5
+
+private fun formatLimitLabel(minutes: Int): String =
+    if (minutes < 60) "${minutes}m" else "${minutes / 60}h${(minutes % 60).takeIf { it > 0 }?.let { "${it}m" } ?: ""}"
 
 @Composable
 fun DeviceAdminPermissionScreen(
@@ -207,7 +217,7 @@ fun DeviceAdminPermissionScreen(
                             .padding(vertical = 9.dp, horizontal = 16.dp)
                     ) {
                         Text(
-                            text = if (option < 60) "${option}m" else "${option / 60}h${(option % 60).takeIf { it > 0 }?.let { "${it}m" } ?: ""}",
+                            text = formatLimitLabel(option),
                             fontFamily = Quicksand,
                             fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
                             fontSize = 13.5.sp,
@@ -216,7 +226,72 @@ fun DeviceAdminPermissionScreen(
                     }
                 }
             }
+
+            val isCustomActive = state.dailyLimitMinutes !in dailyLimitOptions
+            var customMinutes by remember(state.dailyLimitMinutes) {
+                val clamped = state.dailyLimitMinutes.coerceIn(MIN_DAILY_LIMIT_MINUTES, MAX_DAILY_LIMIT_MINUTES)
+                mutableIntStateOf(Math.round(clamped / CUSTOM_LIMIT_STEP_MINUTES.toDouble()).toInt() * CUSTOM_LIMIT_STEP_MINUTES)
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(if (isCustomActive) GoalsPurple.copy(alpha = 0.08f) else GoalsBackground)
+                    .border(
+                        width = if (isCustomActive) 1.5.dp else 1.dp,
+                        color = if (isCustomActive) GoalsPurple else GoalsPurple.copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "Or set your own",
+                    fontFamily = Quicksand,
+                    fontWeight = if (isCustomActive) FontWeight.Bold else FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    color = if (isCustomActive) GoalsPurple else GoalsTextMuted
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    LimitStepperButton(symbol = "–") {
+                        customMinutes = (customMinutes - CUSTOM_LIMIT_STEP_MINUTES).coerceAtLeast(MIN_DAILY_LIMIT_MINUTES)
+                        viewModel.setDailyLimitMinutes(customMinutes)
+                    }
+                    Text(
+                        text = formatLimitLabel(customMinutes),
+                        fontFamily = Quicksand,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp,
+                        color = GoalsTextPrimary,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.widthIn(min = 64.dp)
+                    )
+                    LimitStepperButton(symbol = "+") {
+                        customMinutes = (customMinutes + CUSTOM_LIMIT_STEP_MINUTES).coerceAtMost(MAX_DAILY_LIMIT_MINUTES)
+                        viewModel.setDailyLimitMinutes(customMinutes)
+                    }
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun LimitStepperButton(symbol: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .background(Color.White)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text = symbol, fontSize = 18.sp, color = GoalsTextMuted, fontWeight = FontWeight.Bold)
     }
 }
 

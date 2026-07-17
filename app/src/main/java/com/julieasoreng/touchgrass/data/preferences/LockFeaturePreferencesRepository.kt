@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.lockFeatureDataStore by preferencesDataStore(name = "lock_feature_prefs")
@@ -52,6 +53,13 @@ class LockFeaturePreferencesRepository(private val context: Context) {
 
     suspend fun setDailyLimitMinutes(minutes: Int) {
         context.lockFeatureDataStore.edit { it[Keys.DAILY_LIMIT_MINUTES] = minutes }
+    }
+
+    /** False only until the user (or a one-time onboarding seed) ever explicitly sets a daily
+     *  limit — lets callers distinguish "never set, showing the 60min fallback" from "user chose
+     *  60min on purpose", so the onboarding-target seed doesn't clobber a real choice. */
+    suspend fun hasExplicitDailyLimit(): Boolean {
+        return context.lockFeatureDataStore.data.first().contains(Keys.DAILY_LIMIT_MINUTES)
     }
 
     suspend fun markLocked(reasonText: String) {
