@@ -47,6 +47,20 @@ object UsageStatsHelper {
         return (socialMillis / 60_000L).toInt()
     }
 
+    /** True if any tracked social media app was used at any point since [sinceMillis] — used by the
+     *  focus-session app blocker's tight poll (every few seconds) to detect a blocked app being
+     *  opened. Same API as the other checks here (queryUsageStats, not queryEvents), just checked
+     *  via lastTimeUsed instead of a summed duration, since the polling window is only seconds
+     *  wide rather than a full day. */
+    fun anySocialMediaAppActiveSince(context: Context, sinceMillis: Long): Boolean {
+        if (!hasUsageAccess(context)) return false
+        val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val now = System.currentTimeMillis()
+        if (sinceMillis >= now) return false
+        val stats = usageStatsManager.queryUsageStats(UsageStatsManager.INTERVAL_BEST, sinceMillis, now)
+        return stats.orEmpty().any { it.packageName in SOCIAL_MEDIA_PACKAGES && it.lastTimeUsed >= sinceMillis }
+    }
+
     private fun startOfTodayMillis(): Long {
         val calendar = Calendar.getInstance()
         calendar.set(Calendar.HOUR_OF_DAY, 0)

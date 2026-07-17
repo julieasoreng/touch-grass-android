@@ -70,6 +70,18 @@ class LockFeaturePreferencesRepository(private val context: Context) {
         }
     }
 
+    /** Same post-unlock notification/reason plumbing as [markLocked], for the focus-session app
+     *  blocker — deliberately does NOT touch [Keys.LAST_LOCK_TIMESTAMP], since that field is the
+     *  daily-limit feature's once-per-calendar-day debounce marker (see isSameDay in
+     *  ScreenTimeMonitorService). A focus-session block is a separate trigger with its own
+     *  per-open-event debounce and must not suppress the daily-limit check for the rest of the day. */
+    suspend fun markLockedByFocusBlock(reasonText: String) {
+        context.lockFeatureDataStore.edit { prefs ->
+            prefs[Keys.PENDING_UNLOCK_NOTIFICATION] = true
+            prefs[Keys.LAST_LOCK_REASON_TEXT] = reasonText
+        }
+    }
+
     suspend fun clearPendingUnlockNotification() {
         context.lockFeatureDataStore.edit { it[Keys.PENDING_UNLOCK_NOTIFICATION] = false }
     }
