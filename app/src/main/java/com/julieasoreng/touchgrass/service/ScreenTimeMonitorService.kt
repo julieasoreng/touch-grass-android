@@ -125,11 +125,23 @@ class ScreenTimeMonitorService : Service() {
     }
 
     private suspend fun checkUsageAgainstLimit() {
-        val state = repository.state.first()
+        var state = repository.state.first()
         if (!state.isDeviceAdminActive) {
             Log.d(TRIGGER_TAG, "checkUsageAgainstLimit: device admin not active, skipping check")
             return
         }
+
+        val rawUsageMinutes = UsageStatsHelper.screenTimeTodayMinutes(applicationContext)
+        val rawSocialMinutes = UsageStatsHelper.socialMediaScreenTimeTodayMinutes(applicationContext)
+        // UsageStatsManager reports cumulative usage since local midnight, which includes usage
+        // from before this app was even installed/monitoring was enabled. Snapshot that raw total
+        // once, the first time monitoring runs, so today's trigger only counts usage from this
+        // point forward instead of the whole day. See captureBaselineIfNeeded's doc for why.
+        if (state.baselineTimestamp == 0L) {
+            repository.captureBaselineIfNeeded(rawUsageMinutes, rawSocialMinutes)
+            state = repository.state.first()
+        }
+
         // Only fire once per day: the intervention moment is the next unlock after crossing
         // whichever limit tripped first, not a repeated re-lock every poll while already over budget.
         val alreadyLockedToday = isSameDay(state.lastLockTimestamp, System.currentTimeMillis())
@@ -138,11 +150,16 @@ class ScreenTimeMonitorService : Service() {
             return
         }
 
-        val elapsedMinutes = UsageStatsHelper.screenTimeTodayMinutes(applicationContext)
+        // The baseline snapshot only means "usage before monitoring started" on the day it was
+        // captured — on every later day it's stale, so raw midnight-to-now usage is used as-is.
+        val baselineAppliesToday = isSameDay(state.baselineTimestamp, System.currentTimeMillis())
+        val baselineUsageMinutes = if (baselineAppliesToday) state.baselineUsageMinutes else 0
+        val elapsedMinutes = (rawUsageMinutes - baselineUsageMinutes).coerceAtLeast(0)
         val dailyLimitCrossed = elapsedMinutes >= state.dailyLimitMinutes
         Log.d(
             TRIGGER_TAG,
-            "checkUsageAgainstLimit: measured=${elapsedMinutes}min, threshold=${state.dailyLimitMinutes}min, crossed=$dailyLimitCrossed"
+            "checkUsageAgainstLimit: raw=${rawUsageMinutes}min, baseline=${baselineUsageMinutes}min(appliesToday=$baselineAppliesToday), " +
+                "measured=${elapsedMinutes}min, threshold=${state.dailyLimitMinutes}min, crossed=$dailyLimitCrossed"
         )
         if (dailyLimitCrossed) {
             Log.i(TRIGGER_TAG, "checkUsageAgainstLimit: TRIGGER FIRED (daily screen time limit)")
@@ -150,12 +167,18 @@ class ScreenTimeMonitorService : Service() {
             return
         }
 
-        checkSocialMediaTargetCrossed()
+        checkSocialMediaTargetCrossed(rawSocialMinutes, baselineAppliesToday, state.baselineSocialMinutes)
     }
 
     /** Fails safe if onboarding hasn't set a target yet (null/zero) rather than locking on a
-     *  phantom goal. */
-    private suspend fun checkSocialMediaTargetCrossed() {
+     *  phantom goal. [rawSocialMinutes]/[baselineAppliesToday]/[baselineSocialMinutes] are passed
+     *  in from [checkUsageAgainstLimit] so both checks share one UsageStatsManager query and one
+     *  baseline snapshot per poll. */
+    private suspend fun checkSocialMediaTargetCrossed(
+        rawSocialMinutes: Int,
+        baselineAppliesToday: Boolean,
+        baselineSocialMinutes: Int
+    ) {
         val targetMillis = onboardingPreferencesRepository.targetScreenTimeMillis.first()
         if (targetMillis == null || targetMillis <= 0L) {
             Log.d(TRIGGER_TAG, "checkSocialMediaTargetCrossed: no onboarding target set yet (targetMillis=$targetMillis), skipping check")
@@ -163,11 +186,13 @@ class ScreenTimeMonitorService : Service() {
         }
         val targetMinutes = (targetMillis / 60_000L).toInt()
 
-        val socialMinutes = UsageStatsHelper.socialMediaScreenTimeTodayMinutes(applicationContext)
+        val baselineMinutes = if (baselineAppliesToday) baselineSocialMinutes else 0
+        val socialMinutes = (rawSocialMinutes - baselineMinutes).coerceAtLeast(0)
         val targetCrossed = socialMinutes >= targetMinutes
         Log.d(
             TRIGGER_TAG,
-            "checkSocialMediaTargetCrossed: measured=${socialMinutes}min, threshold=${targetMinutes}min, crossed=$targetCrossed"
+            "checkSocialMediaTargetCrossed: raw=${rawSocialMinutes}min, baseline=${baselineMinutes}min(appliesToday=$baselineAppliesToday), " +
+                "measured=${socialMinutes}min, threshold=${targetMinutes}min, crossed=$targetCrossed"
         )
         if (targetCrossed) {
             Log.i(TRIGGER_TAG, "checkSocialMediaTargetCrossed: TRIGGER FIRED (social media target)")

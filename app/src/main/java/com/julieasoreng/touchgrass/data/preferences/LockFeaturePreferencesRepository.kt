@@ -20,7 +20,10 @@ data class LockFeatureState(
     val lastLockTimestamp: Long = 0L,
     val lastLockReasonText: String = "",
     val lastHeartbeatTimestamp: Long = 0L,
-    val hasDismissedLockNudge: Boolean = false
+    val hasDismissedLockNudge: Boolean = false,
+    val baselineTimestamp: Long = 0L,
+    val baselineUsageMinutes: Int = 0,
+    val baselineSocialMinutes: Int = 0
 )
 
 class LockFeaturePreferencesRepository(private val context: Context) {
@@ -33,6 +36,9 @@ class LockFeaturePreferencesRepository(private val context: Context) {
         val LAST_LOCK_REASON_TEXT = stringPreferencesKey("last_lock_reason_text")
         val LAST_HEARTBEAT_TIMESTAMP = longPreferencesKey("last_heartbeat_timestamp")
         val HAS_DISMISSED_LOCK_NUDGE = booleanPreferencesKey("has_dismissed_lock_nudge")
+        val BASELINE_TIMESTAMP = longPreferencesKey("baseline_timestamp")
+        val BASELINE_USAGE_MINUTES = intPreferencesKey("baseline_usage_minutes")
+        val BASELINE_SOCIAL_MINUTES = intPreferencesKey("baseline_social_minutes")
     }
 
     val state: Flow<LockFeatureState> = context.lockFeatureDataStore.data.map { prefs ->
@@ -43,7 +49,10 @@ class LockFeaturePreferencesRepository(private val context: Context) {
             lastLockTimestamp = prefs[Keys.LAST_LOCK_TIMESTAMP] ?: 0L,
             lastLockReasonText = prefs[Keys.LAST_LOCK_REASON_TEXT] ?: "",
             lastHeartbeatTimestamp = prefs[Keys.LAST_HEARTBEAT_TIMESTAMP] ?: 0L,
-            hasDismissedLockNudge = prefs[Keys.HAS_DISMISSED_LOCK_NUDGE] ?: false
+            hasDismissedLockNudge = prefs[Keys.HAS_DISMISSED_LOCK_NUDGE] ?: false,
+            baselineTimestamp = prefs[Keys.BASELINE_TIMESTAMP] ?: 0L,
+            baselineUsageMinutes = prefs[Keys.BASELINE_USAGE_MINUTES] ?: 0,
+            baselineSocialMinutes = prefs[Keys.BASELINE_SOCIAL_MINUTES] ?: 0
         )
     }
 
@@ -60,6 +69,28 @@ class LockFeaturePreferencesRepository(private val context: Context) {
      *  60min on purpose", so the onboarding-target seed doesn't clobber a real choice. */
     suspend fun hasExplicitDailyLimit(): Boolean {
         return context.lockFeatureDataStore.data.first().contains(Keys.DAILY_LIMIT_MINUTES)
+    }
+
+    /** One-time snapshot of that moment's cumulative UsageStatsManager totals, taken the first
+     *  time monitoring actually runs with device admin active. [ScreenTimeMonitorService]'s
+     *  daily-limit check subtracts this from the day's raw usage — otherwise a user who installs
+     *  mid-afternoon (after already using the phone that day) gets an immediate lock, since
+     *  UsageStatsManager reports usage from local midnight regardless of when the app arrived.
+     *  Guarded by `contains` so repeated calls (every poll) after the first are no-ops. */
+    suspend fun captureBaselineIfNeeded(usageMinutesNow: Int, socialMinutesNow: Int) {
+        context.lockFeatureDataStore.edit { prefs ->
+            if (!prefs.contains(Keys.BASELINE_TIMESTAMP)) {
+                prefs[Keys.BASELINE_TIMESTAMP] = System.currentTimeMillis()
+                prefs[Keys.BASELINE_USAGE_MINUTES] = usageMinutesNow
+                prefs[Keys.BASELINE_SOCIAL_MINUTES] = socialMinutesNow
+            }
+        }
+    }
+
+    /** Debug-only: clears today's lock so the daily-limit trigger can be re-tested without
+     *  waiting for midnight or changing the system clock. */
+    suspend fun debugResetDailyLockGate() {
+        context.lockFeatureDataStore.edit { it[Keys.LAST_LOCK_TIMESTAMP] = 0L }
     }
 
     suspend fun markLocked(reasonText: String) {

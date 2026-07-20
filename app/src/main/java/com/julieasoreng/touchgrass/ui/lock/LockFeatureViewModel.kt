@@ -62,6 +62,11 @@ class LockFeatureViewModel(
         viewModelScope.launch { repository.dismissLockNudge() }
     }
 
+    /** Debug-only: lets a tester re-trip the daily-limit trigger without waiting for midnight. */
+    fun debugResetDailyLockGate() {
+        viewModelScope.launch { repository.debugResetDailyLockGate() }
+    }
+
     /**
      * DevicePolicyManager is the real source of truth for admin-active status — the user can
      * revoke it anytime from system Settings without the app running, so this reconciles our

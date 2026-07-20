@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Excludes the lock-feature's timestamp-sensitive state (last-locked-today, usage baseline)
+     from Android's Auto Backup / device-transfer. Restoring these on a reinstall or new device
+     can desync them from real device-admin/usage state — e.g. a stale baseline from a different
+     calendar day suppressing today's trigger. Onboarding answers (bloom_prefs) are left backed
+     up since restoring those is desirable UX with no such day-sensitivity. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="datastore/lock_feature_prefs.preferences_pb" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="datastore/lock_feature_prefs.preferences_pb" />
+    </device-transfer>
+</data-extraction-rules>

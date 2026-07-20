@@ -47,6 +47,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.julieasoreng.touchgrass.BuildConfig
 import com.julieasoreng.touchgrass.admin.TouchGrassDeviceAdminReceiver
 import com.julieasoreng.touchgrass.usage.UsageStatsHelper
 import com.julieasoreng.touchgrass.ui.theme.GoalsBackground
@@ -299,6 +300,19 @@ fun DeviceAdminPermissionScreen(
                     }
                 }
             }
+        }
+
+        if (BuildConfig.DEBUG) {
+            Text(
+                text = "DEBUG: reset today's lock trigger",
+                fontFamily = Inter,
+                fontSize = 12.sp,
+                color = GoalsTextMuted,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { viewModel.debugResetDailyLockGate() }
+                    .padding(8.dp)
+            )
         }
     }
 }
