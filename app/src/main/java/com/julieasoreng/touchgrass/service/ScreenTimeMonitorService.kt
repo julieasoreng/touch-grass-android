@@ -100,19 +100,20 @@ class ScreenTimeMonitorService : Service() {
             while (currentCoroutineContext().isActive) {
                 val now = System.currentTimeMillis()
                 if (now >= sessionEndMillis) {
-                    Log.d(TAG, "Focus-session block: session's time is up, stopping tight polling")
+                    Log.d(TRIGGER_TAG, "runFocusSessionBlockLoop: session's time is up, stopping tight polling")
                     break
                 }
                 if (!UsageStatsHelper.hasUsageAccess(applicationContext)) {
-                    Log.w(TAG, "Focus-session block: usage access permission no longer granted, stopping tight polling")
+                    Log.w(TRIGGER_TAG, "runFocusSessionBlockLoop: usage access permission no longer granted, stopping tight polling")
                     break
                 }
                 val detected = UsageStatsHelper.anySocialMediaAppActiveSince(applicationContext, lastPollAtMillis)
+                Log.d(TRIGGER_TAG, "runFocusSessionBlockLoop: detected=$detected, blockTriggerPending=$blockTriggerPending (since=$lastPollAtMillis)")
                 lastPollAtMillis = now
                 if (detected) {
                     if (!blockTriggerPending) {
                         blockTriggerPending = true
-                        Log.i(TAG, "Focus-session block: blocked app detected during active session")
+                        Log.i(TRIGGER_TAG, "runFocusSessionBlockLoop: TRIGGER FIRED (blocked app opened during focus session)")
                         lockDeviceForFocusBlock("You opened a blocked app during your focus session.")
                     }
                 } else {
@@ -126,19 +127,25 @@ class ScreenTimeMonitorService : Service() {
     private suspend fun checkUsageAgainstLimit() {
         val state = repository.state.first()
         if (!state.isDeviceAdminActive) {
-            Log.d(TAG, "Poll: device admin not active, skipping check")
+            Log.d(TRIGGER_TAG, "checkUsageAgainstLimit: device admin not active, skipping check")
             return
         }
         // Only fire once per day: the intervention moment is the next unlock after crossing
         // whichever limit tripped first, not a repeated re-lock every poll while already over budget.
-        if (isSameDay(state.lastLockTimestamp, System.currentTimeMillis())) {
-            Log.d(TAG, "Poll: already locked today (lastLockTimestamp=${state.lastLockTimestamp}), skipping check")
+        val alreadyLockedToday = isSameDay(state.lastLockTimestamp, System.currentTimeMillis())
+        if (alreadyLockedToday) {
+            Log.d(TRIGGER_TAG, "checkUsageAgainstLimit: already locked today (lastLockTimestamp=${state.lastLockTimestamp}), skipping check")
             return
         }
 
         val elapsedMinutes = UsageStatsHelper.screenTimeTodayMinutes(applicationContext)
-        Log.d(TAG, "Poll: screenTime=${elapsedMinutes}min vs dailyLimit=${state.dailyLimitMinutes}min")
-        if (elapsedMinutes >= state.dailyLimitMinutes) {
+        val dailyLimitCrossed = elapsedMinutes >= state.dailyLimitMinutes
+        Log.d(
+            TRIGGER_TAG,
+            "checkUsageAgainstLimit: measured=${elapsedMinutes}min, threshold=${state.dailyLimitMinutes}min, crossed=$dailyLimitCrossed"
+        )
+        if (dailyLimitCrossed) {
+            Log.i(TRIGGER_TAG, "checkUsageAgainstLimit: TRIGGER FIRED (daily screen time limit)")
             lockDeviceAndFlagNotification("You hit your ${state.dailyLimitMinutes} min daily screen time limit.")
             return
         }
@@ -151,24 +158,29 @@ class ScreenTimeMonitorService : Service() {
     private suspend fun checkSocialMediaTargetCrossed() {
         val targetMillis = onboardingPreferencesRepository.targetScreenTimeMillis.first()
         if (targetMillis == null || targetMillis <= 0L) {
-            Log.d(TAG, "Poll: no onboarding target set yet (targetMillis=$targetMillis), skipping social check")
+            Log.d(TRIGGER_TAG, "checkSocialMediaTargetCrossed: no onboarding target set yet (targetMillis=$targetMillis), skipping check")
             return
         }
         val targetMinutes = (targetMillis / 60_000L).toInt()
 
         val socialMinutes = UsageStatsHelper.socialMediaScreenTimeTodayMinutes(applicationContext)
-        Log.d(TAG, "Poll: socialMedia=${socialMinutes}min vs target=${targetMinutes}min")
-        if (socialMinutes >= targetMinutes) {
+        val targetCrossed = socialMinutes >= targetMinutes
+        Log.d(
+            TRIGGER_TAG,
+            "checkSocialMediaTargetCrossed: measured=${socialMinutes}min, threshold=${targetMinutes}min, crossed=$targetCrossed"
+        )
+        if (targetCrossed) {
+            Log.i(TRIGGER_TAG, "checkSocialMediaTargetCrossed: TRIGGER FIRED (social media target)")
             lockDeviceAndFlagNotification("You hit your $targetMinutes min daily social media goal.")
         }
     }
 
     private suspend fun lockDeviceAndFlagNotification(reasonText: String) {
         if (!lockDeviceNow()) {
-            Log.w(TAG, "Threshold crossed but DevicePolicyManager reports admin inactive, not locking: $reasonText")
+            Log.w(TRIGGER_TAG, "lockDeviceAndFlagNotification: BLOCKED — DevicePolicyManager reports admin inactive, not locking: $reasonText")
             return
         }
-        Log.i(TAG, "Locking device: $reasonText")
+        Log.i(TRIGGER_TAG, "lockDeviceAndFlagNotification: lockNow() succeeded, marking pending unlock notification: $reasonText")
         repository.markLocked(reasonText)
     }
 
@@ -177,10 +189,10 @@ class ScreenTimeMonitorService : Service() {
      *  for why this writes a separate DataStore path than the daily-limit trigger. */
     private suspend fun lockDeviceForFocusBlock(reasonText: String) {
         if (!lockDeviceNow()) {
-            Log.w(TAG, "Focus-session block triggered but DevicePolicyManager reports admin inactive, not locking: $reasonText")
+            Log.w(TRIGGER_TAG, "lockDeviceForFocusBlock: BLOCKED — DevicePolicyManager reports admin inactive, not locking: $reasonText")
             return
         }
-        Log.i(TAG, "Locking device (focus-session block): $reasonText")
+        Log.i(TRIGGER_TAG, "lockDeviceForFocusBlock: lockNow() succeeded, marking pending unlock notification: $reasonText")
         repository.markLockedByFocusBlock(reasonText)
     }
 
@@ -212,6 +224,10 @@ class ScreenTimeMonitorService : Service() {
 
     companion object {
         private const val TAG = "ScreenTimeMonitor"
+        // Dedicated tag for the measure→threshold→trigger decision pipeline specifically, so it
+        // can be isolated in Logcat (`adb logcat -s SCREENTIME_TRIGGER`) independent of the more
+        // general service lifecycle logs above under TAG.
+        private const val TRIGGER_TAG = "SCREENTIME_TRIGGER"
         private const val MONITOR_INTERVAL_MS = 60_000L
         private const val FOCUS_BLOCK_POLL_INTERVAL_MS = 7_000L
 

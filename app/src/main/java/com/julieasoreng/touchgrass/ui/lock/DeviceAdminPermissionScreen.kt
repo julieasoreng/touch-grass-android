@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -73,6 +74,7 @@ fun DeviceAdminPermissionScreen(
 
     var hasUsageAccess by remember { mutableStateOf(UsageStatsHelper.hasUsageAccess(context)) }
     var hasNotificationPermission by remember { mutableStateOf(isNotificationPermissionGranted(context)) }
+    var hasFullScreenIntentPermission by remember { mutableStateOf(isFullScreenIntentPermissionGranted(context)) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -81,6 +83,7 @@ fun DeviceAdminPermissionScreen(
                 viewModel.refreshAdminState(context)
                 hasUsageAccess = UsageStatsHelper.hasUsageAccess(context)
                 hasNotificationPermission = isNotificationPermissionGranted(context)
+                hasFullScreenIntentPermission = isFullScreenIntentPermissionGranted(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -188,6 +191,25 @@ fun DeviceAdminPermissionScreen(
                 granted = hasNotificationPermission,
                 actionLabel = "Allow",
                 onClick = { notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) }
+            )
+        }
+
+        // Android 14+ won't auto-launch the post-unlock screen without this — it silently
+        // degrades to a normal notification the user has to notice and tap themselves. Missing
+        // this permission is the single biggest reason the lock screen can fail to show up.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            PermissionRow(
+                label = "Full screen alerts",
+                granted = hasFullScreenIntentPermission,
+                actionLabel = "Allow",
+                onClick = {
+                    context.startActivity(
+                        Intent(
+                            Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                            Uri.parse("package:${context.packageName}")
+                        )
+                    )
+                }
             )
         }
 
@@ -338,4 +360,9 @@ private fun isNotificationPermissionGranted(context: android.content.Context): B
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
     return ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
         android.content.pm.PackageManager.PERMISSION_GRANTED
+}
+
+private fun isFullScreenIntentPermissionGranted(context: android.content.Context): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return true
+    return NotificationManagerCompat.from(context).canUseFullScreenIntent()
 }

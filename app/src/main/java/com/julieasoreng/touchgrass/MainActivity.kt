@@ -4,6 +4,7 @@ import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.getValue
@@ -16,6 +17,7 @@ import com.julieasoreng.touchgrass.service.MonitoringWatchdogWorker
 import com.julieasoreng.touchgrass.service.ScreenTimeMonitorService
 import com.julieasoreng.touchgrass.ui.navigation.BloomNavHost
 import com.julieasoreng.touchgrass.ui.theme.BloomTheme
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -54,7 +56,18 @@ class MainActivity : ComponentActivity() {
         val devicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         val isActive = devicePolicyManager.isAdminActive(TouchGrassDeviceAdminReceiver.componentName(this))
         val repository = LockFeaturePreferencesRepository(applicationContext)
-        lifecycleScope.launch { repository.setDeviceAdminActive(isActive) }
+        lifecycleScope.launch {
+            repository.setDeviceAdminActive(isActive)
+            // UserPresentReceiver is only registered while ScreenTimeMonitorService is alive, so a
+            // lock that fires while the service is dead (OEM battery kill, or just not started yet
+            // after boot) leaves this flag set with nothing left to turn it into a visible screen —
+            // catch it here on every app open instead of depending solely on that one broadcast.
+            if (repository.state.first().pendingUnlockNotification) {
+                Log.d("SCREENTIME_TRIGGER", "resumeMonitoringIfNeeded: pendingUnlockNotification was still set — showing post-unlock screen directly")
+                showPostUnlock = true
+                repository.clearPendingUnlockNotification()
+            }
+        }
         if (isActive) {
             ScreenTimeMonitorService.start(this)
             MonitoringWatchdogWorker.schedule(this)

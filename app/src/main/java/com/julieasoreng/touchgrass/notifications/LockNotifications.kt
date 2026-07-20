@@ -9,10 +9,13 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.julieasoreng.touchgrass.MainActivity
+
+private const val TRIGGER_TAG = "SCREENTIME_TRIGGER"
 
 object LockNotifications {
     const val MONITORING_CHANNEL_ID = "screen_time_monitoring"
@@ -62,7 +65,20 @@ object LockNotifications {
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
         ) {
+            Log.w(TRIGGER_TAG, "postUnlockAlert: POST_NOTIFICATIONS not granted, cannot show anything (reason=$reasonText)")
             return
+        }
+
+        // Android 14+ only auto-launches a full-screen-intent notification as the actual
+        // full-screen UI if the user has separately granted "Full screen notifications" special
+        // access — without it, this silently degrades to a normal heads-up notification the user
+        // has to notice and tap themselves, which is very easy to miss right after unlocking their
+        // phone. Logged here so a "the lock screen never showed up" report can be confirmed against
+        // this specific permission rather than guessed at.
+        val canFullScreen = NotificationManagerCompat.from(context).canUseFullScreenIntent()
+        Log.d(TRIGGER_TAG, "postUnlockAlert: canUseFullScreenIntent=$canFullScreen, reason=$reasonText")
+        if (!canFullScreen) {
+            Log.w(TRIGGER_TAG, "postUnlockAlert: full-screen intent NOT permitted — will show as a normal notification, not an automatic takeover. User needs to grant \"Full screen notifications\" in system settings.")
         }
 
         val contentIntent = Intent(context, MainActivity::class.java).apply {
@@ -88,6 +104,7 @@ object LockNotifications {
             .build()
 
         NotificationManagerCompat.from(context).notify(UNLOCK_NOTIFICATION_ID, notification)
+        Log.i(TRIGGER_TAG, "postUnlockAlert: notification posted (fullScreen=$canFullScreen)")
     }
 
     /** Posted by MonitoringWatchdogWorker when it finds the monitoring service's heartbeat stale
