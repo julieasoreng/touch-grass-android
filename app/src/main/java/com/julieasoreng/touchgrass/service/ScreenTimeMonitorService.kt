@@ -13,6 +13,8 @@ import com.julieasoreng.touchgrass.data.goals.ActiveFocusSessionRepository
 import com.julieasoreng.touchgrass.data.preferences.LockFeaturePreferencesRepository
 import com.julieasoreng.touchgrass.data.preferences.OnboardingPreferencesRepository
 import com.julieasoreng.touchgrass.notifications.LockNotifications
+import com.julieasoreng.touchgrass.overlay.InterventionOverlayController
+import com.julieasoreng.touchgrass.usage.UsageEventsHelper
 import com.julieasoreng.touchgrass.usage.UsageStatsHelper
 import java.util.Calendar
 import kotlinx.coroutines.CoroutineScope
@@ -25,6 +27,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class ScreenTimeMonitorService : Service() {
 
@@ -34,6 +37,7 @@ class ScreenTimeMonitorService : Service() {
     private lateinit var devicePolicyManager: DevicePolicyManager
     private var serviceScope: CoroutineScope? = null
     private var userPresentReceiver: UserPresentReceiver? = null
+    private val overlayController by lazy { InterventionOverlayController(applicationContext) }
 
     override fun onCreate() {
         super.onCreate()
@@ -59,6 +63,10 @@ class ScreenTimeMonitorService : Service() {
         Log.w(TAG, "onDestroy — monitoring loop stops here until something restarts this service")
         serviceScope?.cancel()
         userPresentReceiver?.let { unregisterReceiver(it) }
+        // Don't leave a dangling WindowManager window behind if the service dies mid-overlay.
+        if (overlayController.isShowing()) {
+            overlayController.hideBecauseUserLeftMonitoredApp()
+        }
         super.onDestroy()
     }
 
@@ -76,6 +84,7 @@ class ScreenTimeMonitorService : Service() {
             }
         }
         scope.launch { runFocusSessionBlockLoop() }
+        scope.launch { runOverlayInterventionLoop() }
     }
 
     /**
@@ -121,6 +130,87 @@ class ScreenTimeMonitorService : Service() {
                 }
                 delay(FOCUS_BLOCK_POLL_INTERVAL_MS)
             }
+        }
+    }
+
+    private data class ActiveSocialSession(val packageName: String, val startMillis: Long)
+
+    /**
+     * Continuous, in-app-overlay intervention: unlike [runFocusSessionBlockLoop] (which only cares
+     * whether a blocked app was opened at all during a focus session) and [checkUsageAgainstLimit]
+     * (which checks cumulative usage against a daily/UsageStats-aggregated total), this tracks one
+     * specific *continuous* foreground stretch in a social media app using raw [UsageEventsHelper]
+     * transitions, and shows [overlayController] directly over that app once this stretch alone
+     * crosses [OVERLAY_SESSION_THRESHOLD_SECONDS] — without requiring the user to ever leave the app.
+     *
+     * State (`session`, `triggeredForSessionStart`) lives in this function's local scope rather than
+     * on the service, so it can't be accidentally reset by anything else touching service state —
+     * the only things that change it are actual RESUMED/PAUSED transitions read from UsageEvents.
+     */
+    private suspend fun runOverlayInterventionLoop() {
+        // Generous first lookback so a session already in progress when this loop starts (e.g. the
+        // service was just (re)started while the user was already mid-scroll) is still caught,
+        // rather than only detected on the *next* open. Subsequent polls use a tight incremental
+        // window instead, since by then `session` already tracks anything ongoing.
+        var lastPollMillis = System.currentTimeMillis() - INITIAL_LOOKBACK_MILLIS
+        var session: ActiveSocialSession? = null
+        var triggeredForSessionStart: Long? = null
+
+        while (currentCoroutineContext().isActive) {
+            val now = System.currentTimeMillis()
+            if (!UsageStatsHelper.hasUsageAccess(applicationContext)) {
+                Log.w(OVERLAY_TAG, "runOverlayInterventionLoop: usage access not granted, skipping tick")
+                delay(OVERLAY_POLL_INTERVAL_MS)
+                continue
+            }
+
+            val transitions = UsageEventsHelper.socialMediaTransitionsSince(applicationContext, lastPollMillis)
+            lastPollMillis = now
+            for (transition in transitions) {
+                when (transition.type) {
+                    UsageEventsHelper.TransitionType.RESUMED -> {
+                        session = ActiveSocialSession(transition.packageName, transition.timestampMillis)
+                        triggeredForSessionStart = null
+                        Log.d(OVERLAY_TAG, "runOverlayInterventionLoop: session started pkg=${transition.packageName}, startMillis=${transition.timestampMillis}")
+                    }
+                    UsageEventsHelper.TransitionType.PAUSED -> {
+                        if (session?.packageName == transition.packageName) {
+                            Log.d(OVERLAY_TAG, "runOverlayInterventionLoop: session ended pkg=${transition.packageName} (left app or force-closed)")
+                            session = null
+                            if (overlayController.isShowing()) {
+                                withContext(Dispatchers.Main) { overlayController.hideBecauseUserLeftMonitoredApp() }
+                            }
+                        }
+                    }
+                }
+            }
+
+            val activeSession = session
+            if (activeSession == null) {
+                delay(OVERLAY_POLL_INTERVAL_MS)
+                continue
+            }
+
+            val elapsedSeconds = (now - activeSession.startMillis) / 1000
+            val alreadyTriggered = triggeredForSessionStart == activeSession.startMillis
+            Log.d(
+                OVERLAY_TAG,
+                "runOverlayInterventionLoop: pkg=${activeSession.packageName}, elapsedSeconds=$elapsedSeconds, " +
+                    "thresholdSeconds=$OVERLAY_SESSION_THRESHOLD_SECONDS, alreadyTriggered=$alreadyTriggered"
+            )
+            if (!alreadyTriggered && elapsedSeconds >= OVERLAY_SESSION_THRESHOLD_SECONDS) {
+                triggeredForSessionStart = activeSession.startMillis
+                val crossedAtMillis = System.currentTimeMillis()
+                Log.i(OVERLAY_TAG, "runOverlayInterventionLoop: TRIGGER FIRED pkg=${activeSession.packageName}, crossedAtMillis=$crossedAtMillis")
+                withContext(Dispatchers.Main) {
+                    overlayController.show("You've been scrolling ${activeSession.packageName} for ${elapsedSeconds / 60} min straight.") {
+                        Log.i(OVERLAY_TAG, "runOverlayInterventionLoop: overlay dismissed by user at ${System.currentTimeMillis()}")
+                    }
+                }
+                val shownAtMillis = System.currentTimeMillis()
+                Log.i(OVERLAY_TAG, "runOverlayInterventionLoop: overlay shown at $shownAtMillis, reactionTimeMs=${shownAtMillis - crossedAtMillis}")
+            }
+            delay(OVERLAY_POLL_INTERVAL_MS)
         }
     }
 
@@ -253,8 +343,19 @@ class ScreenTimeMonitorService : Service() {
         // can be isolated in Logcat (`adb logcat -s SCREENTIME_TRIGGER`) independent of the more
         // general service lifecycle logs above under TAG.
         private const val TRIGGER_TAG = "SCREENTIME_TRIGGER"
+        // Dedicated tag for the continuous in-app-overlay intervention loop specifically, so its
+        // poll -> threshold -> addView() chain can be isolated in Logcat
+        // (`adb logcat -s OVERLAY_TRIGGER`) independent of the daily-limit/focus-block logs above.
+        private const val OVERLAY_TAG = "OVERLAY_TRIGGER"
         private const val MONITOR_INTERVAL_MS = 60_000L
         private const val FOCUS_BLOCK_POLL_INTERVAL_MS = 7_000L
+        // Poll cadence for the continuous overlay-intervention loop; spec calls for 3-5s.
+        private const val OVERLAY_POLL_INTERVAL_MS = 4_000L
+        // Test-artifact constant, not wired to onboarding/settings — short on purpose so a real
+        // test session doesn't require sitting through a full "production" daily limit to see the
+        // overlay fire. Adjust directly here for a given test run.
+        private const val OVERLAY_SESSION_THRESHOLD_SECONDS = 90L
+        private const val INITIAL_LOOKBACK_MILLIS = 6 * 60 * 60 * 1000L
 
         fun start(context: Context) {
             ContextCompat.startForegroundService(context, Intent(context, ScreenTimeMonitorService::class.java))

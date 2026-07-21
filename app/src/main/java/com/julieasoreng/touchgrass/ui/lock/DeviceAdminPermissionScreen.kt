@@ -2,9 +2,11 @@ package com.julieasoreng.touchgrass.ui.lock
 
 import android.Manifest
 import android.app.admin.DevicePolicyManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -76,6 +78,8 @@ fun DeviceAdminPermissionScreen(
     var hasUsageAccess by remember { mutableStateOf(UsageStatsHelper.hasUsageAccess(context)) }
     var hasNotificationPermission by remember { mutableStateOf(isNotificationPermissionGranted(context)) }
     var hasFullScreenIntentPermission by remember { mutableStateOf(isFullScreenIntentPermissionGranted(context)) }
+    var hasOverlayPermission by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
+    var isIgnoringBatteryOptimizations by remember { mutableStateOf(isIgnoringBatteryOptimizations(context)) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -85,6 +89,8 @@ fun DeviceAdminPermissionScreen(
                 hasUsageAccess = UsageStatsHelper.hasUsageAccess(context)
                 hasNotificationPermission = isNotificationPermissionGranted(context)
                 hasFullScreenIntentPermission = isFullScreenIntentPermissionGranted(context)
+                hasOverlayPermission = Settings.canDrawOverlays(context)
+                isIgnoringBatteryOptimizations = isIgnoringBatteryOptimizations(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -182,6 +188,38 @@ fun DeviceAdminPermissionScreen(
             onClick = {
                 context.startActivity(
                     Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS, Uri.parse("package:${context.packageName}"))
+                )
+            }
+        )
+
+        // Required for the in-app overlay intervention (TYPE_APPLICATION_OVERLAY) to draw on top
+        // of the social media app itself, as opposed to the device-lock intervention above which
+        // only needs Device Admin. Cannot be requested via a runtime permission dialog — the user
+        // has to flip it on in this dedicated system settings screen.
+        PermissionRow(
+            label = "Draw over other apps",
+            granted = hasOverlayPermission,
+            actionLabel = "Grant access",
+            onClick = {
+                context.startActivity(
+                    Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}"))
+                )
+            }
+        )
+
+        // Without this, OEM battery management (especially Samsung/Xiaomi) can kill the monitoring
+        // service mid-session, which would silently stop the continuous overlay-intervention loop
+        // for the rest of a test run.
+        PermissionRow(
+            label = "Ignore battery optimizations",
+            granted = isIgnoringBatteryOptimizations,
+            actionLabel = "Allow",
+            onClick = {
+                context.startActivity(
+                    Intent(
+                        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        Uri.parse("package:${context.packageName}")
+                    )
                 )
             }
         )
@@ -379,4 +417,9 @@ private fun isNotificationPermissionGranted(context: android.content.Context): B
 private fun isFullScreenIntentPermissionGranted(context: android.content.Context): Boolean {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return true
     return NotificationManagerCompat.from(context).canUseFullScreenIntent()
+}
+
+private fun isIgnoringBatteryOptimizations(context: Context): Boolean {
+    val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+    return powerManager.isIgnoringBatteryOptimizations(context.packageName)
 }

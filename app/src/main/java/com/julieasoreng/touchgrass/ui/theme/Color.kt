@@ -31,3 +31,8 @@ val GoalsDeleteBackground = Color(0xFFE08A7D)
 // Post-unlock "mirror" screen — deliberately stark and separate from the mint-toned focus timer.
 val LockScreenBlack = Color(0xFF000000)
 val LockScreenTextMuted = Color(0xFFA09DAA)
+
+// In-app-overlay intervention screen (drawn over the social media app itself, not the post-unlock
+// mirror screen) — black/red per the test design, distinct from the muted post-unlock palette so
+// the two intervention types stay visually distinguishable during testing.
+val InterventionRed = Color(0xFFE5484D)
