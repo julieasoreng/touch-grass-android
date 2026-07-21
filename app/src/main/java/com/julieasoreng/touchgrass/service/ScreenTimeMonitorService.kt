@@ -141,7 +141,8 @@ class ScreenTimeMonitorService : Service() {
      * (which checks cumulative usage against a daily/UsageStats-aggregated total), this tracks one
      * specific *continuous* foreground stretch in a social media app using raw [UsageEventsHelper]
      * transitions, and shows [overlayController] directly over that app once this stretch alone
-     * crosses [OVERLAY_SESSION_THRESHOLD_SECONDS] — without requiring the user to ever leave the app.
+     * crosses the daily-limit-minutes setting (converted to seconds) — without requiring the user
+     * to ever leave the app.
      *
      * State (`session`, `triggeredForSessionStart`) lives in this function's local scope rather than
      * on the service, so it can't be accidentally reset by anything else touching service state —
@@ -191,14 +192,25 @@ class ScreenTimeMonitorService : Service() {
                 continue
             }
 
+            // Reuses the same daily-limit-minutes setting the user already sets on the permission
+            // screen, rather than a second/separate "overlay threshold" control. This *was* a fixed
+            // OVERLAY_SESSION_THRESHOLD_SECONDS = 90 test constant that never read this preference
+            // at all — so setting the daily limit to 5 min had no effect on the overlay, and it kept
+            // firing at its old hardcoded ~1.5 min regardless of what the UI said. dailyLimitMinutes
+            // is minutes; elapsedSeconds below is seconds — the explicit *60 here is the one unit
+            // conversion in this comparison, logged out in both units so a mismatch would show up
+            // directly in Logcat instead of needing to be inferred.
+            val thresholdMinutes = repository.state.first().dailyLimitMinutes
+            val thresholdSeconds = thresholdMinutes * 60L
             val elapsedSeconds = (now - activeSession.startMillis) / 1000
             val alreadyTriggered = triggeredForSessionStart == activeSession.startMillis
             Log.d(
                 OVERLAY_TAG,
-                "runOverlayInterventionLoop: pkg=${activeSession.packageName}, elapsedSeconds=$elapsedSeconds, " +
-                    "thresholdSeconds=$OVERLAY_SESSION_THRESHOLD_SECONDS, alreadyTriggered=$alreadyTriggered"
+                "runOverlayInterventionLoop: pkg=${activeSession.packageName}, " +
+                    "elapsedSeconds=$elapsedSeconds (${elapsedSeconds / 60}min ${elapsedSeconds % 60}s), " +
+                    "thresholdMinutes=$thresholdMinutes -> thresholdSeconds=$thresholdSeconds, alreadyTriggered=$alreadyTriggered"
             )
-            if (!alreadyTriggered && elapsedSeconds >= OVERLAY_SESSION_THRESHOLD_SECONDS) {
+            if (!alreadyTriggered && elapsedSeconds >= thresholdSeconds) {
                 triggeredForSessionStart = activeSession.startMillis
                 val crossedAtMillis = System.currentTimeMillis()
                 Log.i(OVERLAY_TAG, "runOverlayInterventionLoop: TRIGGER FIRED pkg=${activeSession.packageName}, crossedAtMillis=$crossedAtMillis")
@@ -351,10 +363,6 @@ class ScreenTimeMonitorService : Service() {
         private const val FOCUS_BLOCK_POLL_INTERVAL_MS = 7_000L
         // Poll cadence for the continuous overlay-intervention loop; spec calls for 3-5s.
         private const val OVERLAY_POLL_INTERVAL_MS = 4_000L
-        // Test-artifact constant, not wired to onboarding/settings — short on purpose so a real
-        // test session doesn't require sitting through a full "production" daily limit to see the
-        // overlay fire. Adjust directly here for a given test run.
-        private const val OVERLAY_SESSION_THRESHOLD_SECONDS = 90L
         private const val INITIAL_LOOKBACK_MILLIS = 6 * 60 * 60 * 1000L
 
         fun start(context: Context) {
